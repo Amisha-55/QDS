@@ -30,7 +30,6 @@ build/
 *.egg-info/
 
 # Generated project data
-data/
 results/
 
 # Logs

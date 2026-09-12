@@ -17,7 +17,7 @@ print("========================================")
 
 
 # --------------------------------------------------
-# 1. ORIGINAL LEGITIMATE SIGNATURE
+# 1. GENERATE ORIGINAL LEGITIMATE SIGNATURE
 # --------------------------------------------------
 
 signature = generate_signature(message)
@@ -35,9 +35,17 @@ print(signature["signature_id"])
 print("Timestamp:")
 print(signature["timestamp"])
 
-result = verify_signature(signature)
 
-print("Verification Accuracy:")
+# --------------------------------------------------
+# 2. VERIFY ORIGINAL SIGNATURE
+# --------------------------------------------------
+
+result = verify_signature(
+    signature,
+    message
+)
+
+print("\nVerification Accuracy:")
 print(f"{result['verification_accuracy'] * 100:.2f}%")
 
 print("Decision:")
@@ -45,7 +53,7 @@ print(result["decision"])
 
 
 # --------------------------------------------------
-# 2. ACCEPT ORIGINAL SIGNATURE
+# 3. ACCEPT ORIGINAL SIGNATURE
 # --------------------------------------------------
 
 if result["decision"] == "VALID":
@@ -57,7 +65,7 @@ if result["decision"] == "VALID":
 
 
 # --------------------------------------------------
-# 3. ATTACKER REPLAYS SAME SIGNATURE
+# 4. ATTACKER REPLAYS SAME SIGNATURE
 # --------------------------------------------------
 
 replayed_signature = deepcopy(signature)
@@ -72,7 +80,20 @@ print(replayed_signature["used"])
 
 
 # --------------------------------------------------
-# 4. REPLAY DETECTION
+# 5. VERIFY REPLAY
+# --------------------------------------------------
+
+replay_result = verify_signature(
+    replayed_signature,
+    message
+)
+
+print("\nCryptographic Verification:")
+print(replay_result["decision"])
+
+
+# --------------------------------------------------
+# 6. REPLAY DETECTION
 # --------------------------------------------------
 
 if replayed_signature["used"]:

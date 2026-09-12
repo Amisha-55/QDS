@@ -3,120 +3,196 @@ from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 
 
-def message_to_bit(message):
+def message_to_state(message):
     """
-    Convert a message into a deterministic quantum state bit
-    using SHA-256.
+    Deterministically map a message to one of the
+    three Pauli eigenstates: Z, X, or Y.
     """
+
     digest = hashlib.sha256(message.encode()).hexdigest()
 
-    # Use the first hexadecimal character
-    # to derive a single bit.
     value = int(digest[0], 16)
-    return value % 2
+
+    states = ["Z", "X", "Y"]
+
+    return states[value % 3]
 
 
-def generate_signature(message):
+def prepare_state(qc, state):
     """
-    Prototype quantum signature generation.
+    Prepare the +1 eigenstate of the selected
+    Pauli operator.
 
-    The message determines the quantum state.
-    The state is then transferred using
-    Bell-state-based quantum teleportation.
+    Z -> |0>
+    X -> |+>
+    Y -> |+i>
     """
 
-    state_bit = message_to_bit(message)
+    if state == "Z":
+        # |0>
+        pass
 
-    # 3 qubits:
+    elif state == "X":
+        # |+> = H|0>
+        qc.h(0)
+
+    elif state == "Y":
+        # |+i> = S H|0>
+        qc.h(0)
+        qc.s(0)
+
+    else:
+        raise ValueError("State must be Z, X, or Y")
+
+
+def apply_measurement_basis(qc, state, qubit):
+    """
+    Rotate the selected Pauli eigenstate into the
+    computational (Z) basis before measurement.
+
+    Z basis: no rotation
+    X basis: H
+    Y basis: Sdg followed by H
+    """
+
+    if state == "Z":
+        # Already in Z basis
+        pass
+
+    elif state == "X":
+        # X-basis measurement
+        qc.h(qubit)
+
+    elif state == "Y":
+        # Y-basis measurement
+        qc.sdg(qubit)
+        qc.h(qubit)
+
+    else:
+        raise ValueError("State must be Z, X, or Y")
+
+
+def generate_signature(message, shots=1000):
+
+    message_hash = hashlib.sha256(
+        message.encode()
+    ).hexdigest()
+
+    state = message_to_state(message)
+
+    # ------------------------------------------------
+    # 3 qubits
+    #
     # q0 -> message/signing state
-    # q1, q2 -> Bell pair
+    # q1,q2 -> Bell pair
+    # ------------------------------------------------
+
     qc = QuantumCircuit(3, 3)
 
     # ------------------------------------------------
-    # 1. Prepare quantum state representing signature
+    # 1. Prepare message quantum state
     # ------------------------------------------------
 
-    if state_bit == 1:
-        qc.x(0)
+    prepare_state(qc, state)
 
     # ------------------------------------------------
-    # 2. Create Bell state
+    # 2. Create Bell pair
     # ------------------------------------------------
 
     qc.h(1)
     qc.cx(1, 2)
 
     # ------------------------------------------------
-    # 3. Alice performs teleportation operations
+    # 3. Alice's teleportation operations
     # ------------------------------------------------
 
     qc.cx(0, 1)
     qc.h(0)
 
     # ------------------------------------------------
-    # 4. Measure Alice's qubits
+    # 4. Measure Alice's two qubits
     # ------------------------------------------------
 
     qc.measure(0, 0)
     qc.measure(1, 1)
 
     # ------------------------------------------------
-    # 5. Pauli corrections at Bob
+    # 5. Bob's Pauli corrections
     # ------------------------------------------------
 
+    # X correction controlled by Alice's second bit
     with qc.if_test((qc.clbits[1], 1)):
         qc.x(2)
 
+    # Z correction controlled by Alice's first bit
     with qc.if_test((qc.clbits[0], 1)):
         qc.z(2)
 
     # ------------------------------------------------
-    # 6. Projective measurement of Bob's qubit
+    # 6. Apply correct projective measurement basis
+    # ------------------------------------------------
+
+    apply_measurement_basis(qc, state, 2)
+
+    # ------------------------------------------------
+    # 7. Measure Bob's qubit
     # ------------------------------------------------
 
     qc.measure(2, 2)
 
     # ------------------------------------------------
-    # 7. Run simulation
+    # 8. Run simulation
     # ------------------------------------------------
 
     simulator = AerSimulator()
 
     result = simulator.run(
         qc,
-        shots=1000
+        shots=shots
     ).result()
 
     counts = result.get_counts()
 
     return {
         "message": message,
-        "message_hash": hashlib.sha256(
-            message.encode()
-        ).hexdigest(),
-        "quantum_state": f"|{state_bit}>",
-        "measurement_results": counts
+        "message_hash": message_hash,
+        "quantum_state": state,
+        "measurement_basis": state,
+        "expected_outcome": "0",
+        "measurement_results": counts,
+        "shots": shots
     }
 
 
-# ----------------------------------------------------
-# Test signature generation
-# ----------------------------------------------------
+# --------------------------------------------------
+# TEST
+# --------------------------------------------------
 
-message = "SIH26141"
+if __name__ == "__main__":
 
-signature = generate_signature(message)
+    message = "SIH26141"
 
-print("===== QDS SIGNATURE GENERATION =====")
+    signature = generate_signature(message)
 
-print("\nMessage:")
-print(signature["message"])
+    print("===== QDS SIGNATURE GENERATION =====")
 
-print("\nMessage Hash:")
-print(signature["message_hash"])
+    print("\nMessage:")
+    print(signature["message"])
 
-print("\nQuantum Signature State:")
-print(signature["quantum_state"])
+    print("\nMessage Hash:")
+    print(signature["message_hash"])
 
-print("\nMeasurement Results:")
-print(signature["measurement_results"])
+    print("\nQuantum State:")
+    print(signature["quantum_state"])
+
+    print("\nMeasurement Basis:")
+    print(signature["measurement_basis"])
+
+    print("\nExpected Measurement Outcome:")
+    print(signature["expected_outcome"])
+
+    print("\nMeasurement Results:")
+    print(signature["measurement_results"])
+
+    print("\nShots:")
+    print(signature["shots"])

@@ -22,7 +22,10 @@ legitimate_signature = generate_signature(message)
 
 print("\n[1] LEGITIMATE SIGNER")
 
-legitimate_result = verify_signature(legitimate_signature)
+legitimate_result = verify_signature(
+    legitimate_signature,
+    message
+)
 
 print("Quantum State:")
 print(legitimate_result["expected_state"])
@@ -41,10 +44,14 @@ print(legitimate_result["decision"])
 impersonated_signature = deepcopy(legitimate_signature)
 
 # Attacker claims a different quantum state
-if impersonated_signature["quantum_state"] == "|0>":
-    impersonated_signature["quantum_state"] = "|1>"
-else:
-    impersonated_signature["quantum_state"] = "|0>"
+states = ["Z", "X", "Y"]
+
+current_state = impersonated_signature["quantum_state"]
+
+for state in states:
+    if state != current_state:
+        impersonated_signature["quantum_state"] = state
+        break
 
 
 print("\n[2] IMPERSONATION ATTACK")
@@ -54,12 +61,18 @@ print(impersonated_signature["quantum_state"])
 
 
 # --------------------------------------------------
-# VERIFY IMPERSONATED SIGNATURE
+# 3. VERIFY IMPERSONATED SIGNATURE
 # --------------------------------------------------
 
-impersonated_result = verify_signature(impersonated_signature)
+impersonated_result = verify_signature(
+    impersonated_signature,
+    message
+)
 
-print("\nVerification Accuracy:")
+print("\nExpected State:")
+print(impersonated_result["expected_state"])
+
+print("Verification Accuracy:")
 print(f"{impersonated_result['verification_accuracy'] * 100:.2f}%")
 
 print("Decision:")

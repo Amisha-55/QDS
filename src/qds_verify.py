@@ -1,44 +1,122 @@
-from qds_signature import generate_signature
+import hashlib
+
+from qds_signature import message_to_state
 
 
-def verify_signature(signature, threshold=0.95):
+def verify_signature(signature, message, threshold=0.95):
     """
-    Verify a quantum signature using the measurement results.
+    Verify a teleportation-based quantum signature simulation.
 
-    threshold:
-        Minimum verification accuracy required for acceptance.
-        This is currently a prototype value and will later be
-        calibrated from legitimate/attack simulation data.
+    The verifier:
+    1. Recalculates the SHA-256 hash from the trusted message.
+    2. Independently derives the expected Pauli eigenstate.
+    3. Checks the received signature hash.
+    4. Evaluates Bob's projective measurement results.
+    5. Applies a statistical verification threshold.
+
+    The message supplied to this function is treated as the
+    trusted/original message and is NOT taken from the signature.
     """
 
-    expected_state = signature["quantum_state"]
-    expected_bit = int(expected_state[1])
+    # -----------------------------------------------
+    # 1. Recalculate message hash
+    # -----------------------------------------------
+
+    calculated_hash = hashlib.sha256(
+        message.encode()
+    ).hexdigest()
+
+    received_hash = signature["message_hash"]
+
+    hash_valid = (
+        calculated_hash == received_hash
+    )
+
+    # -----------------------------------------------
+    # 2. Independently derive expected state
+    # -----------------------------------------------
+
+    expected_state = message_to_state(message)
+
+    # -----------------------------------------------
+    # 3. Obtain received measurement results
+    # -----------------------------------------------
 
     counts = signature["measurement_results"]
 
     total_shots = sum(counts.values())
 
+    if total_shots == 0:
+        return {
+            "expected_state": expected_state,
+            "received_state": signature.get(
+                "quantum_state",
+                "UNKNOWN"
+            ),
+            "hash_valid": hash_valid,
+            "total_shots": 0,
+            "correct_shots": 0,
+            "verification_accuracy": 0.0,
+            "threshold": threshold,
+            "decision": "INVALID / SUSPICIOUS"
+        }
+
+    # -----------------------------------------------
+    # 4. Evaluate Bob's projective measurement
+    #
+    # All three states are +1 eigenstates.
+    #
+    # After the correct basis rotation:
+    #
+    # Z -> expected measurement 0
+    # X -> expected measurement 0
+    # Y -> expected measurement 0
+    #
+    # Qiskit returns classical bits as c2 c1 c0.
+    # Bob's measurement is c2 = leftmost bit.
+    # -----------------------------------------------
+
+    expected_bit = 0
     correct_shots = 0
 
     for outcome, count in counts.items():
 
-        # Qiskit returns classical bits as c2 c1 c0.
-        # Bob's final measurement is stored in c2,
-        # therefore it is the LEFTMOST bit.
         bob_bit = int(outcome[0])
 
         if bob_bit == expected_bit:
             correct_shots += count
 
-    verification_accuracy = correct_shots / total_shots
+    # -----------------------------------------------
+    # 5. Calculate verification accuracy
+    # -----------------------------------------------
 
-    if verification_accuracy >= threshold:
+    verification_accuracy = (
+        correct_shots / total_shots
+    )
+
+    # -----------------------------------------------
+    # 6. Final verification decision
+    # -----------------------------------------------
+
+    if (
+        hash_valid
+        and expected_state == signature.get(
+            "quantum_state",
+            "UNKNOWN"
+        )
+        and verification_accuracy >= threshold
+    ):
         decision = "VALID"
     else:
         decision = "INVALID / SUSPICIOUS"
 
     return {
         "expected_state": expected_state,
+        "received_state": signature.get(
+            "quantum_state",
+            "UNKNOWN"
+        ),
+        "hash_valid": hash_valid,
         "total_shots": total_shots,
         "correct_shots": correct_shots,
         "verification_accuracy": verification_accuracy,
@@ -51,31 +129,49 @@ def verify_signature(signature, threshold=0.95):
 # TEST LEGITIMATE SIGNATURE
 # --------------------------------------------------
 
-message = "SIH26141"
+if __name__ == "__main__":
 
-signature = generate_signature(message)
+    from qds_signature import generate_signature
 
-result = verify_signature(signature)
+    message = "SIH26141"
 
-print("===== QDS SIGNATURE VERIFICATION =====")
+    signature = generate_signature(message)
 
-print("\nMessage:")
-print(signature["message"])
+    result = verify_signature(
+        signature,
+        message
+    )
 
-print("\nExpected Quantum State:")
-print(result["expected_state"])
+    print("===== QDS SIGNATURE VERIFICATION =====")
 
-print("\nTotal Measurement Shots:")
-print(result["total_shots"])
+    print("\nMessage:")
+    print(message)
 
-print("\nCorrect Measurements:")
-print(result["correct_shots"])
+    print("\nExpected Quantum State:")
+    print(result["expected_state"])
 
-print("\nVerification Accuracy:")
-print(f"{result['verification_accuracy'] * 100:.2f}%")
+    print("\nReceived Quantum State:")
+    print(result["received_state"])
 
-print("\nThreshold:")
-print(f"{result['threshold'] * 100:.2f}%")
+    print("\nHash Valid:")
+    print(result["hash_valid"])
 
-print("\nVerification Decision:")
-print(result["decision"])
+    print("\nTotal Measurement Shots:")
+    print(result["total_shots"])
+
+    print("\nCorrect Measurements:")
+    print(result["correct_shots"])
+
+    print("\nVerification Accuracy:")
+    print(
+        f"{result['verification_accuracy'] * 100:.2f}%"
+    )
+
+    print("\nThreshold:")
+    print(
+        f"{result['threshold'] * 100:.2f}%"
+    )
+
+    print("\nVerification Decision:")
+    print(result["decision"])
+

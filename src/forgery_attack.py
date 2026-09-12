@@ -4,13 +4,12 @@ from copy import deepcopy
 
 
 # --------------------------------------------------
-# GENERATE LEGITIMATE SIGNATURE
+# FORGERY ATTACK SIMULATION
 # --------------------------------------------------
 
 message = "SIH26141"
 
 legitimate_signature = generate_signature(message)
-
 
 print("========================================")
 print("       FORGERY ATTACK SIMULATION")
@@ -18,12 +17,15 @@ print("========================================")
 
 
 # --------------------------------------------------
-# VERIFY LEGITIMATE SIGNATURE
+# 1. VERIFY LEGITIMATE SIGNATURE
 # --------------------------------------------------
 
 print("\n[1] LEGITIMATE SIGNATURE")
 
-legitimate_result = verify_signature(legitimate_signature)
+legitimate_result = verify_signature(
+    legitimate_signature,
+    message
+)
 
 print("Expected State:")
 print(legitimate_result["expected_state"])
@@ -36,27 +38,37 @@ print(legitimate_result["decision"])
 
 
 # --------------------------------------------------
-# CREATE FORGED SIGNATURE
+# 2. CREATE FORGED SIGNATURE
 # --------------------------------------------------
 
 forged_signature = deepcopy(legitimate_signature)
 
 # Attacker changes the claimed quantum state
-if forged_signature["quantum_state"] == "|0>":
-    forged_signature["quantum_state"] = "|1>"
-else:
-    forged_signature["quantum_state"] = "|0>"
+states = ["Z", "X", "Y"]
+
+current_state = forged_signature["quantum_state"]
+
+for state in states:
+    if state != current_state:
+        forged_signature["quantum_state"] = state
+        break
 
 
 # --------------------------------------------------
-# VERIFY FORGED SIGNATURE
+# 3. VERIFY FORGED SIGNATURE
 # --------------------------------------------------
 
 print("\n[2] FORGED SIGNATURE")
 
-forged_result = verify_signature(forged_signature)
+print("Attacker's Claimed State:")
+print(forged_signature["quantum_state"])
 
-print("Claimed State:")
+forged_result = verify_signature(
+    forged_signature,
+    message
+)
+
+print("Expected State:")
 print(forged_result["expected_state"])
 
 print("Verification Accuracy:")
