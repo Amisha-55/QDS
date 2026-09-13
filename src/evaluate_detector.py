@@ -26,7 +26,7 @@ def evaluate_attack(attack):
 
     for _ in range(EXPERIMENTS):
 
-        _, aggregate_error, decision = run_multi_state_test(
+        _, aggregate_error, _, decision = run_multi_state_test(
             attack=attack,
             shots=SHOTS,
             noise_probability=NOISE_PROBABILITY
@@ -58,6 +58,12 @@ if __name__ == "__main__":
 
     results = {}
 
+    # Security metric counters
+    true_negative = 0
+    false_positive = 0
+    true_positive = 0
+    false_negative = 0
+
     for attack in ATTACKS:
 
         name = "LEGITIMATE" if attack is None else attack.upper()
@@ -82,6 +88,19 @@ if __name__ == "__main__":
         total_correct += correct
         total_experiments += EXPERIMENTS
 
+        # Calculate security metrics
+        if attack is None:
+
+            # Legitimate signature
+            true_negative += correct
+            false_positive += incorrect
+
+        else:
+
+            # Attack
+            true_positive += correct
+            false_negative += incorrect
+
         print("----------------------------------------")
         print(name)
         print(f"Correct Decisions: {correct}/{EXPERIMENTS}")
@@ -93,6 +112,28 @@ if __name__ == "__main__":
 
     overall_accuracy = total_correct / total_experiments
 
+    # Security metrics
+    total_attacks = true_positive + false_negative
+    total_legitimate = true_negative + false_positive
+
+    detection_rate = (
+        true_positive / total_attacks
+        if total_attacks > 0
+        else 0
+    )
+
+    false_positive_rate = (
+        false_positive / total_legitimate
+        if total_legitimate > 0
+        else 0
+    )
+
+    false_negative_rate = (
+        false_negative / total_attacks
+        if total_attacks > 0
+        else 0
+    )
+
     print()
     print("========================================")
     print("          OVERALL PERFORMANCE")
@@ -101,3 +142,18 @@ if __name__ == "__main__":
     print(f"Total Correct Decisions: {total_correct}")
     print(f"Total Experiments: {total_experiments}")
     print(f"Overall Accuracy: {overall_accuracy * 100:.2f}%")
+
+    print()
+    print("========================================")
+    print("           SECURITY METRICS")
+    print("========================================")
+
+    print(f"True Positives: {true_positive}")
+    print(f"True Negatives: {true_negative}")
+    print(f"False Positives: {false_positive}")
+    print(f"False Negatives: {false_negative}")
+
+    print()
+    print(f"Detection Rate: {detection_rate * 100:.2f}%")
+    print(f"False Positive Rate: {false_positive_rate * 100:.2f}%")
+    print(f"False Negative Rate: {false_negative_rate * 100:.2f}%")

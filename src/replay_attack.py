@@ -5,26 +5,47 @@ from copy import deepcopy
 import uuid
 
 
-# --------------------------------------------------
-# REPLAY ATTACK SIMULATION
-# --------------------------------------------------
+# ----------------------------------------
+# REPLAY REGISTRY
+# ----------------------------------------
+
+USED_SIGNATURES = set()
+
+
+def check_replay(signature_id):
+    """
+    Check whether a signature has already been used.
+
+    Returns:
+        True  -> replay detected
+        False -> signature is new
+    """
+    if signature_id in USED_SIGNATURES:
+        return True
+
+    USED_SIGNATURES.add(signature_id)
+    return False
+
+
+# ----------------------------------------
+# MAIN REPLAY ATTACK SIMULATION
+# ----------------------------------------
 
 message = "SIH26141"
 
 print("========================================")
-print("         REPLAY ATTACK SIMULATION")
+print("       REPLAY ATTACK SIMULATION")
 print("========================================")
 
 
-# --------------------------------------------------
-# 1. GENERATE ORIGINAL LEGITIMATE SIGNATURE
-# --------------------------------------------------
+# ----------------------------------------
+# 1. ORIGINAL SIGNATURE
+# ----------------------------------------
 
 signature = generate_signature(message)
 
 signature["signature_id"] = str(uuid.uuid4())
 signature["timestamp"] = datetime.now().isoformat()
-signature["used"] = False
 
 
 print("\n[1] ORIGINAL SIGNATURE")
@@ -36,37 +57,40 @@ print("Timestamp:")
 print(signature["timestamp"])
 
 
-# --------------------------------------------------
-# 2. VERIFY ORIGINAL SIGNATURE
-# --------------------------------------------------
-
+# Quantum verification
 result = verify_signature(
     signature,
     message
 )
 
-print("\nVerification Accuracy:")
-print(f"{result['verification_accuracy'] * 100:.2f}%")
+print("\nQuantum Verification:")
+print(f"Verification Accuracy: "
+      f"{result['verification_accuracy'] * 100:.2f}%")
 
 print("Decision:")
 print(result["decision"])
 
 
-# --------------------------------------------------
-# 3. ACCEPT ORIGINAL SIGNATURE
-# --------------------------------------------------
+# ----------------------------------------
+# ACCEPT ORIGINAL SIGNATURE
+# ----------------------------------------
 
 if result["decision"] == "VALID":
 
-    signature["used"] = True
+    replay_detected = check_replay(
+        signature["signature_id"]
+    )
 
-    print("\nOriginal signature accepted.")
-    print("Signature marked as USED.")
+    if not replay_detected:
+        print("\nSignature accepted.")
+        print("Signature ID registered in replay registry.")
+    else:
+        print("\nUnexpected replay detected.")
 
 
-# --------------------------------------------------
-# 4. ATTACKER REPLAYS SAME SIGNATURE
-# --------------------------------------------------
+# ----------------------------------------
+# 2. REPLAY ATTACK
+# ----------------------------------------
 
 replayed_signature = deepcopy(signature)
 
@@ -75,49 +99,53 @@ print("\n[2] REPLAY ATTACK")
 print("Replayed Signature ID:")
 print(replayed_signature["signature_id"])
 
-print("Original Signature Already Used:")
-print(replayed_signature["used"])
+print("Same Signature ID:")
+print(
+    replayed_signature["signature_id"]
+    == signature["signature_id"]
+)
 
 
-# --------------------------------------------------
-# 5. VERIFY REPLAY
-# --------------------------------------------------
-
+# Quantum verification still succeeds because
+# the signature itself is cryptographically valid.
 replay_result = verify_signature(
     replayed_signature,
     message
 )
 
-print("\nCryptographic Verification:")
+print("\nQuantum Verification:")
+print(f"Verification Accuracy: "
+      f"{replay_result['verification_accuracy'] * 100:.2f}%")
+
+print("Cryptographic Decision:")
 print(replay_result["decision"])
 
 
-# --------------------------------------------------
-# 6. REPLAY DETECTION
-# --------------------------------------------------
+# ----------------------------------------
+# REPLAY DETECTION
+# ----------------------------------------
 
-if replayed_signature["used"]:
+replay_detected = check_replay(
+    replayed_signature["signature_id"]
+)
 
+
+if replay_detected:
     replay_decision = "REPLAY ATTACK DETECTED"
-
 else:
-
     replay_decision = "NO REPLAY DETECTED"
 
 
-print("\nReplay Detection Decision:")
+print("\nReplay Registry Check:")
 print(replay_decision)
 
 
-# --------------------------------------------------
+# ----------------------------------------
 # FINAL RESULT
-# --------------------------------------------------
+# ----------------------------------------
 
 print("\n========================================")
 print("             ATTACK RESULT")
 print("========================================")
 
-if replay_decision == "REPLAY ATTACK DETECTED":
-    print("REPLAY ATTACK DETECTED")
-else:
-    print("REPLAY ATTACK NOT DETECTED")
+print(replay_decision)

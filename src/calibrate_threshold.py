@@ -1,172 +1,139 @@
-from qiskit import QuantumCircuit
-from qiskit_aer import AerSimulator
-from qiskit_aer.noise import NoiseModel, depolarizing_error
-import statistics
+from noisy_channel import run_noisy_experiment
+from config import SHOTS, STATES, BASES
 
 
-def prepare_state(qc, state):
-    if state == "Z":
-        pass
+# ============================================
+# SETTINGS
+# ============================================
 
-    elif state == "X":
-        qc.h(0)
-
-    elif state == "Y":
-        qc.h(0)
-        qc.s(0)
-
-    else:
-        raise ValueError("State must be Z, X, or Y")
+NOISE_PROBABILITY = 0.02
+REPEATS = 50
 
 
-def measure_in_basis(qc, basis):
-    if basis == "X":
-        qc.h(0)
+# ============================================
+# EXPECTED BEHAVIOR
+# ============================================
 
-    elif basis == "Y":
-        qc.sdg(0)
-        qc.h(0)
+def expected_probability_one(state, basis):
+    if state == basis:
+        return 0.0
 
-    elif basis == "Z":
-        pass
-
-    else:
-        raise ValueError("Basis must be X, Y, or Z")
-
-    qc.measure(0, 0)
+    return 0.5
 
 
-def create_noise_model(noise_probability):
-    noise_model = NoiseModel()
+# ============================================
+# CALCULATE ONE EXPERIMENT SCORE
+# ============================================
 
-    noise = depolarizing_error(noise_probability, 1)
-
-    noise_model.add_quantum_error(
-        noise,
-        ["id"],
-        [0]
-    )
-
-    return noise_model
-
-
-def run_legitimate_experiment(
-    state,
-    noise_probability=0.02,
-    shots=1000
+def calculate_score(
+    shots=SHOTS,
+    noise_probability=NOISE_PROBABILITY
 ):
-    qc = QuantumCircuit(1, 1)
 
-    # Prepare legitimate Pauli eigenstate
-    prepare_state(qc, state)
+    total_deviation = 0.0
+    experiment_count = 0
 
-    # Simulated quantum channel noise
-    qc.id(0)
+    for state in STATES:
 
-    # Projective measurement in matching basis
-    measure_in_basis(qc, state)
+        for basis in BASES:
 
-    simulator = AerSimulator()
+            counts = run_noisy_experiment(
+                state=state,
+                attack=None,
+                noise_probability=noise_probability,
+                shots=shots,
+                measurement_basis=basis
+            )
 
-    noise_model = create_noise_model(noise_probability)
+            probability_1 = counts.get("1", 0) / shots
 
-    result = simulator.run(
-        qc,
-        shots=shots,
-        noise_model=noise_model,
-        optimization_level=0
-    ).result()
+            expected_p1 = expected_probability_one(
+                state,
+                basis
+            )
 
-    return result.get_counts()
+            deviation = abs(
+                probability_1 - expected_p1
+            )
 
+            total_deviation += deviation
+            experiment_count += 1
 
-def calculate_error_rate(counts, shots):
-    unexpected_count = counts.get("1", 0)
-
-    return unexpected_count / shots
-
-
-print("========================================")
-print("  NOISY CHANNEL THRESHOLD CALIBRATION")
-print("========================================")
-
-states = ["Z", "X", "Y"]
-
-experiments = 20
-shots = 1000
-noise_probability = 0.02
-
-print(f"\nNoise Parameter: {noise_probability}")
-print(f"Experiments per state: {experiments}")
-print(f"Shots per experiment: {shots}")
+    return total_deviation / experiment_count
 
 
-all_error_rates = []
+# ============================================
+# CALIBRATION
+# ============================================
 
+if __name__ == "__main__":
 
-for state in states:
+    print("========================================")
+    print("     LEGITIMATE THRESHOLD CALIBRATION")
+    print("========================================")
 
-    print(f"\n{'=' * 40}")
-    print(f"STATE: {state}-EIGENSTATE")
-    print(f"{'=' * 40}")
+    print(f"\nNoise Probability: {NOISE_PROBABILITY}")
+    print(f"Shots per experiment: {SHOTS}")
+    print(f"Calibration repeats: {REPEATS}")
 
-    error_rates = []
+    scores = []
 
-    for i in range(1, experiments + 1):
+    for i in range(REPEATS):
 
-        counts = run_legitimate_experiment(
-            state=state,
-            noise_probability=noise_probability,
-            shots=shots
-        )
+        score = calculate_score()
 
-        error_rate = calculate_error_rate(
-            counts,
-            shots
-        )
-
-        error_rates.append(error_rate)
+        scores.append(score)
 
         print(
-            f"Experiment {i:02d}: "
-            f"Counts={counts}, "
-            f"Error Rate={error_rate:.4f}"
+            f"Run {i + 1:02d}/{REPEATS} "
+            f"→ Score = {score:.4f}"
         )
 
-    mean_error = statistics.mean(error_rates)
-    std_error = statistics.stdev(error_rates)
-    max_error = max(error_rates)
+    mean_score = sum(scores) / len(scores)
 
-    print("\nState Statistics")
-    print(f"Mean Error Rate : {mean_error:.4f}")
-    print(f"Std Deviation   : {std_error:.4f}")
-    print(f"Maximum Error   : {max_error:.4f}")
+    variance = sum(
+        (score - mean_score) ** 2
+        for score in scores
+    ) / len(scores)
 
-    all_error_rates.extend(error_rates)
+    std_score = variance ** 0.5
 
+    minimum = min(scores)
+    maximum = max(scores)
 
-print(f"\n{'=' * 40}")
-print("OVERALL CALIBRATION")
-print(f"{'=' * 40}")
+    # Conservative statistical threshold
+    threshold = mean_score + 3 * std_score
 
-overall_mean = statistics.mean(all_error_rates)
-overall_std = statistics.stdev(all_error_rates)
-overall_max = max(all_error_rates)
+    # Ensure every calibration run is accepted
+    threshold = max(
+        threshold,
+        maximum
+    )
 
-print(f"Overall Mean Error : {overall_mean:.4f}")
-print(f"Overall Std        : {overall_std:.4f}")
-print(f"Overall Maximum    : {overall_max:.4f}")
+    print("\n========================================")
+    print("          CALIBRATION RESULTS")
+    print("========================================")
 
+    print(f"Mean Score:      {mean_score:.4f}")
+    print(f"Std Deviation:   {std_score:.4f}")
+    print(f"Minimum Score:   {minimum:.4f}")
+    print(f"Maximum Score:   {maximum:.4f}")
 
-# Conservative threshold:
-# mean + 3 standard deviations
-threshold = overall_mean + (3 * overall_std)
+    print("\n----------------------------------------")
 
-# Ensure the threshold is not lower than the
-# maximum observed legitimate error.
-threshold = max(threshold, overall_max)
+    print(
+        f"Recommended Threshold: "
+        f"{threshold:.4f}"
+    )
 
-print(f"\nCalibrated Error Threshold: {threshold:.4f}")
-print(f"Calibrated Acceptance Accuracy Target: {(1 - threshold) * 100:.2f}%")
+    print("----------------------------------------")
 
-print("\nCalibration complete.")
+    print(
+        "\nThis threshold is calibrated from "
+        "legitimate experiments only."
+    )
+
+    print(
+        "It should be validated against attack "
+        "experiments before being treated as final."
+    )

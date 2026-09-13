@@ -1,56 +1,230 @@
 from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 
-# 3 qubits:
-# q0 = state to teleport
-# q1, q2 = entangled Bell pair
-qc = QuantumCircuit(3, 3)
 
-# ------------------------------------------------
-# 1. Prepare the state to be teleported
-# ------------------------------------------------
-qc.x(0)
+def prepare_state(qc, state):
+    """
+    Prepare one of the three +1 Pauli eigenstates.
 
-# ------------------------------------------------
-# 2. Create Bell pair between q1 and q2
-# ------------------------------------------------
-qc.h(1)
-qc.cx(1, 2)
+    Z -> |0>
+    X -> |+>
+    Y -> |+i>
+    """
 
-# ------------------------------------------------
-# 3. Alice entangles q0 with q1
-# ------------------------------------------------
-qc.cx(0, 1)
-qc.h(0)
+    if state == "Z":
+        # |0>
+        pass
 
-# ------------------------------------------------
-# 4. Measure Alice's two qubits
-# ------------------------------------------------
-qc.measure(0, 0)
-qc.measure(1, 1)
+    elif state == "X":
+        # |+> = H|0>
+        qc.h(0)
 
-# ------------------------------------------------
-# 5. Bob applies Pauli corrections
-# ------------------------------------------------
-with qc.if_test((qc.clbits[1], 1)):
-    qc.x(2)
+    elif state == "Y":
+        # |+i> = S H|0>
+        qc.h(0)
+        qc.s(0)
 
-with qc.if_test((qc.clbits[0], 1)):
-    qc.z(2)
+    else:
+        raise ValueError("State must be Z, X, or Y")
 
-# ------------------------------------------------
-# 6. Measure Bob's qubit
-# ------------------------------------------------
-qc.measure(2, 2)
 
-print("Quantum Teleportation Circuit:")
-print(qc)
+def apply_measurement_basis(qc, state):
+    """
+    Rotate Bob's qubit into the computational basis
+    for measurement in the selected Pauli basis.
 
-# Run simulation
-simulator = AerSimulator()
-result = simulator.run(qc, shots=1000).result()
+    Z basis -> no rotation
+    X basis -> H
+    Y basis -> Sdg followed by H
+    """
 
-counts = result.get_counts()
+    if state == "Z":
+        pass
 
-print("\nMeasurement Results:")
-print(counts)
+    elif state == "X":
+        qc.h(2)
+
+    elif state == "Y":
+        qc.sdg(2)
+        qc.h(2)
+
+    else:
+        raise ValueError("State must be Z, X, or Y")
+
+
+def create_bell_pair(qc):
+    """
+    Create the Bell state
+
+        |Φ+> = (|00> + |11>) / sqrt(2)
+
+    using q1 and q2.
+    """
+
+    qc.h(1)
+    qc.cx(1, 2)
+
+
+def teleport_state(state, shots=1000):
+    """
+    Teleport a selected Pauli eigenstate from q0 to q2.
+
+    Qubits:
+        q0 -> original state
+        q1 -> Alice's Bell-pair qubit
+        q2 -> Bob's Bell-pair qubit
+
+    Classical bits:
+        c0 -> measurement of q0
+        c1 -> measurement of q1
+        c2 -> Bob's final measurement
+    """
+
+    if state not in ["Z", "X", "Y"]:
+        raise ValueError("State must be Z, X, or Y")
+
+    if shots <= 0:
+        raise ValueError("Shots must be greater than zero")
+
+    qc = QuantumCircuit(3, 3)
+
+    # ------------------------------------------------
+    # 1. Prepare state to be teleported
+    # ------------------------------------------------
+
+    prepare_state(qc, state)
+
+    # ------------------------------------------------
+    # 2. Create Bell pair
+    # ------------------------------------------------
+
+    create_bell_pair(qc)
+
+    # ------------------------------------------------
+    # 3. Alice's Bell measurement operations
+    # ------------------------------------------------
+
+    qc.cx(0, 1)
+    qc.h(0)
+
+    # ------------------------------------------------
+    # 4. Measure Alice's qubits
+    # ------------------------------------------------
+
+    qc.measure(0, 0)
+    qc.measure(1, 1)
+
+    # ------------------------------------------------
+    # 5. Bob's conditional Pauli corrections
+    # ------------------------------------------------
+
+    # X correction controlled by c1
+    with qc.if_test((qc.clbits[1], 1)):
+        qc.x(2)
+
+    # Z correction controlled by c0
+    with qc.if_test((qc.clbits[0], 1)):
+        qc.z(2)
+
+    # ------------------------------------------------
+    # 6. Measure Bob in the same basis as the
+    #    original state
+    # ------------------------------------------------
+
+    apply_measurement_basis(qc, state)
+
+    qc.measure(2, 2)
+
+    # ------------------------------------------------
+    # 7. Run simulation
+    # ------------------------------------------------
+
+    simulator = AerSimulator()
+
+    result = simulator.run(
+        qc,
+        shots=shots
+    ).result()
+
+    return result.get_counts()
+
+
+def calculate_bob_probability(counts, shots):
+    """
+    Calculate Bob's P(0) and P(1).
+
+    Qiskit displays classical bits as c2 c1 c0.
+    Therefore, Bob's measurement c2 is the leftmost bit.
+    """
+
+    bob_zero = 0
+    bob_one = 0
+
+    for result, count in counts.items():
+
+        bob_bit = result[0]
+
+        if bob_bit == "0":
+            bob_zero += count
+        else:
+            bob_one += count
+
+    probability_zero = bob_zero / shots
+    probability_one = bob_one / shots
+
+    return probability_zero, probability_one
+
+
+if __name__ == "__main__":
+
+    shots = 1000
+
+    print("========================================")
+    print("       QUANTUM TELEPORTATION TEST")
+    print("========================================")
+
+    for state in ["Z", "X", "Y"]:
+
+        counts = teleport_state(
+            state,
+            shots
+        )
+
+        probability_zero, probability_one = (
+            calculate_bob_probability(
+                counts,
+                shots
+            )
+        )
+
+        print("\n----------------------------------------")
+        print(f"STATE TELEPORTED: {state}")
+
+        print("Measurement Results:")
+        print(counts)
+
+        print(
+            f"Bob P(0): "
+            f"{probability_zero:.3f}"
+        )
+
+        print(
+            f"Bob P(1): "
+            f"{probability_one:.3f}"
+        )
+
+        if probability_zero >= 0.99:
+
+            print(
+                "Teleportation Result: SUCCESS"
+            )
+
+        else:
+
+            print(
+                "Teleportation Result: CHECK"
+            )
+
+    print("\n========================================")
+    print("       TELEPORTATION TEST COMPLETE")
+    print("========================================")
