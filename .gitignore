@@ -34,3 +34,5 @@ results/
 
 # Logs
 *.log
+
+keys/public_keys.json
