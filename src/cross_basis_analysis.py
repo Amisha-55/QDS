@@ -11,15 +11,12 @@ def prepare_state(qc, state):
     """Prepare a Pauli eigenstate."""
 
     if state == "Z":
-        # |0>
         pass
 
     elif state == "X":
-        # |+>
         qc.h(0)
 
     elif state == "Y":
-        # |+i>
         qc.h(0)
         qc.s(0)
 

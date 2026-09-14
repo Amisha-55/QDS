@@ -33,7 +33,6 @@ if __name__ == "__main__":
 
     shots = SHOTS
 
-    # Example legitimate result
     legitimate_counts = {"0": 988, "1": 12}
 
     p0, p1, legitimate_error = calculate_error_rate(
@@ -52,7 +51,6 @@ if __name__ == "__main__":
     print("Decision:", legitimate_decision)
 
 
-    # Example attack result
     attack_counts = {"0": 12, "1": 988}
 
     p0, p1, attack_error = calculate_error_rate(

@@ -4,15 +4,12 @@ from qiskit_aer import AerSimulator
 
 def prepare_state(qc, state):
     if state == "Z":
-        # |0>
         pass
 
     elif state == "X":
-        # |+>
         qc.h(0)
 
     elif state == "Y":
-        # |+i>
         qc.h(0)
         qc.s(0)
 
@@ -60,13 +57,10 @@ def run_experiment(state, attack=None, shots=1000):
 
     qc = QuantumCircuit(1, 1)
 
-    # Prepare Pauli eigenstate
     prepare_state(qc, state)
 
-    # Simulate channel manipulation
     apply_attack(qc, attack)
 
-    # Measure in corresponding eigenbasis
     measure_in_basis(qc, state)
 
     simulator = AerSimulator()
@@ -87,7 +81,6 @@ def calculate_statistics(counts, shots):
     probability_0 = zero_count / shots
     probability_1 = one_count / shots
 
-    # Expected result for the +1 eigenstate is 0
     error_rate = probability_1
 
     return probability_0, probability_1, error_rate

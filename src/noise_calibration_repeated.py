@@ -71,7 +71,6 @@ def run_experiment(state, basis, noise_level):
 
     prepare_state(qc, state)
 
-    # Identity gate represents the quantum channel.
     qc.id(0)
 
     measure_in_basis(qc, basis)

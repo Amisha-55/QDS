@@ -17,15 +17,12 @@ def prepare_state(qc, state):
     """
 
     if state == "Z":
-        # |0>
         pass
 
     elif state == "X":
-        # |+> = H|0>
         qc.h(0)
 
     elif state == "Y":
-        # |+i> = S H |0>
         qc.h(0)
         qc.s(0)
 
@@ -37,15 +34,12 @@ def apply_attack(qc, attack):
     """Apply a simulated Pauli channel manipulation."""
 
     if attack == "bit_flip":
-        # X operation
         qc.x(0)
 
     elif attack == "phase_flip":
-        # Z operation
         qc.z(0)
 
     elif attack == "bit_phase_flip":
-        # Y operation
         qc.y(0)
 
     elif attack is None:
@@ -78,13 +72,10 @@ def run_experiment(state, attack=None, measurement_basis=None, shots=1000):
 
     qc = QuantumCircuit(1, 1)
 
-    # Step 1: Prepare Pauli eigenstate
     prepare_state(qc, state)
 
-    # Step 2: Apply channel manipulation
     apply_attack(qc, attack)
 
-    # Step 3: Projective measurement
     if measurement_basis is None:
         measurement_basis = state
 

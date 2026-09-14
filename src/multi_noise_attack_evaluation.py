@@ -4,17 +4,11 @@ from qiskit_aer import AerSimulator
 from qiskit_aer.noise import NoiseModel, depolarizing_error
 
 
-# ============================================================
-# EXPERIMENT CONFIGURATION
-# ============================================================
-
 SHOTS = 1000
 REPEATS = 20
 
 NOISE_LEVELS = [0.00, 0.01, 0.02, 0.05, 0.10]
 
-# Preliminary thresholds obtained from the independent
-# repeated legitimate-noise calibration experiment.
 CALIBRATED_THRESHOLDS = {
     0.00: 0.0133,
     0.01: 0.0187,
@@ -34,10 +28,6 @@ ATTACKS = [
 ]
 
 
-# ============================================================
-# STATE PREPARATION
-# ============================================================
-
 def prepare_state(qc, state):
     """Prepare a Pauli eigenstate."""
 
@@ -51,10 +41,6 @@ def prepare_state(qc, state):
     else:
         raise ValueError("State must be Z, X, or Y")
 
-
-# ============================================================
-# ATTACK APPLICATION
-# ============================================================
 
 def apply_attack(qc, attack):
     """Apply a simulated Pauli attack."""
@@ -71,10 +57,6 @@ def apply_attack(qc, attack):
         raise ValueError("Unknown attack type")
 
 
-# ============================================================
-# BASIS MEASUREMENT
-# ============================================================
-
 def measure_in_basis(qc, basis):
     """Measure the qubit in the selected Pauli basis."""
 
@@ -90,10 +72,6 @@ def measure_in_basis(qc, basis):
 
     qc.measure(0, 0)
 
-
-# ============================================================
-# NOISE MODEL
-# ============================================================
 
 def build_simulator(noise_level):
     """
@@ -115,25 +93,17 @@ def build_simulator(noise_level):
     return AerSimulator(noise_model=noise_model)
 
 
-# ============================================================
-# SINGLE EXPERIMENT
-# ============================================================
-
 def run_experiment(state, basis, attack, simulator):
     """Run one state/basis experiment."""
 
     qc = QuantumCircuit(1, 1)
 
-    # Prepare state
     prepare_state(qc, state)
 
-    # Apply attack
     apply_attack(qc, attack)
 
-    # Simulated quantum channel
     qc.id(0)
 
-    # Measurement
     measure_in_basis(qc, basis)
 
     result = simulator.run(
@@ -147,10 +117,6 @@ def run_experiment(state, basis, attack, simulator):
 
     return one_count / SHOTS
 
-
-# ============================================================
-# EXPECTED LEGITIMATE DISTRIBUTION
-# ============================================================
 
 def expected_probability_1(state, basis):
     """
@@ -168,10 +134,6 @@ def expected_probability_1(state, basis):
 
     return 0.5
 
-
-# ============================================================
-# AGGREGATE DEVIATION SCORE
-# ============================================================
 
 def calculate_score(attack, simulator):
     """
@@ -204,10 +166,6 @@ def calculate_score(attack, simulator):
     return float(np.mean(deviations))
 
 
-# ============================================================
-# STATISTICS
-# ============================================================
-
 def calculate_statistics(scores):
     """Calculate summary statistics."""
 
@@ -218,10 +176,6 @@ def calculate_statistics(scores):
         "max": float(np.max(scores)),
     }
 
-
-# ============================================================
-# MAIN
-# ============================================================
 
 def main():
 
@@ -315,10 +269,6 @@ def main():
                     f"{rate:.1f}% "
                     f"({detections}/{REPEATS})"
                 )
-
-    # ========================================================
-    # FINAL SUMMARY
-    # ========================================================
 
     print("\n\n")
     print("=" * 115)

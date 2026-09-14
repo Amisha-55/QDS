@@ -1,76 +1,142 @@
 import hashlib
-import uuid
+import secrets
 from datetime import datetime
+import uuid
 
 from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 
 
-# ============================================================
-# MESSAGE → QUANTUM STATE
-# ============================================================
 
-def message_to_state(message):
+
+PAULI_BASES = ["Z", "X", "Y"]
+
+PROTOCOL_NAME = (
+    "Teleportation-based Quantum Signature Simulation"
+)
+
+PROTOCOL_VERSION = "2.0"
+
+
+
+def calculate_message_hash(message):
     """
-    Deterministically map a message to one of the
-    three +1 Pauli eigenstates.
+    Calculate the classical SHA-256 fingerprint of the message.
 
-    Z -> |0>
-    X -> |+>
-    Y -> |+i>
+    IMPORTANT:
+        This hash is used ONLY as a classical integrity component.
+
+        It is NOT used to select the quantum states.
+        It is NOT used to generate the quantum signature.
     """
 
-    digest = hashlib.sha256(
-        message.encode()
+    if not isinstance(message, str):
+        raise TypeError("Message must be a string")
+
+    if not message:
+        raise ValueError("Message cannot be empty")
+
+    return hashlib.sha256(
+        message.encode("utf-8")
     ).hexdigest()
 
-    value = int(digest[0], 16)
-
-    states = ["Z", "X", "Y"]
-
-    return states[value % len(states)]
 
 
-# ============================================================
-# QUANTUM STATE PREPARATION
-# ============================================================
 
-def prepare_state(qc, state, qubit=0):
+def message_to_bits(message):
     """
-    Prepare the +1 eigenstate of the selected
-    Pauli operator.
+    Convert the UTF-8 encoded message into a sequence of bits.
 
-    Z -> |0>
-    X -> |+>
-    Y -> |+i>
+    Example:
+
+        "A"
+          ↓
+        01000001
     """
 
-    if state == "Z":
+    if not isinstance(message, str):
+        raise TypeError("Message must be a string")
 
-        # |0> is already the initial state.
-        pass
+    if not message:
+        raise ValueError("Message cannot be empty")
 
-    elif state == "X":
+    data = message.encode("utf-8")
 
-        # |+> = H|0>
-        qc.h(qubit)
+    bits = []
 
-    elif state == "Y":
+    for byte in data:
+        for shift in range(7, -1, -1):
+            bits.append(
+                (byte >> shift) & 1
+            )
 
-        # |+i> = S|+> = S H|0>
-        qc.h(qubit)
-        qc.s(qubit)
+    return bits
 
-    else:
 
+
+
+def prepare_state(
+    qc,
+    basis,
+    bit,
+    qubit=0
+):
+    """
+    Prepare one of six Pauli eigenstates.
+
+    basis = Z:
+        bit 0 -> |0>
+        bit 1 -> |1>
+
+    basis = X:
+        bit 0 -> |+>
+        bit 1 -> |->
+
+    basis = Y:
+        bit 0 -> |+i>
+        bit 1 -> |-i>
+
+    The state is chosen independently of SHA-256.
+    """
+
+    if basis not in PAULI_BASES:
         raise ValueError(
-            "State must be Z, X, or Y"
+            "Basis must be Z, X, or Y"
+        )
+
+    if bit not in (0, 1):
+        raise ValueError(
+            "Bit must be 0 or 1"
         )
 
 
-# ============================================================
-# MEASUREMENT BASIS
-# ============================================================
+    if basis == "Z":
+
+        if bit == 1:
+            qc.x(qubit)
+
+  
+
+    elif basis == "X":
+
+        qc.h(qubit)
+
+        if bit == 1:
+            qc.z(qubit)
+
+    
+
+    elif basis == "Y":
+
+        # |+i> = S H |0>
+        qc.h(qubit)
+        qc.s(qubit)
+
+        # |-i> = Z |+i>
+        if bit == 1:
+            qc.z(qubit)
+
+
 
 def apply_measurement_basis(
     qc,
@@ -78,30 +144,23 @@ def apply_measurement_basis(
     qubit
 ):
     """
-    Rotate a qubit so that measurement in the
-    computational Z basis becomes measurement
-    in the requested Pauli basis.
-
-    Z basis:
-        No rotation
-
-    X basis:
-        H
-
-    Y basis:
-        Sdg followed by H
+    Rotate the selected Pauli basis into the computational
+    Z basis before measurement.
     """
 
     if basis == "Z":
 
+        # Already in Z basis.
         pass
 
     elif basis == "X":
 
+        # X basis -> Z basis
         qc.h(qubit)
 
     elif basis == "Y":
 
+        # Y basis -> Z basis
         qc.sdg(qubit)
         qc.h(qubit)
 
@@ -112,175 +171,118 @@ def apply_measurement_basis(
         )
 
 
-# ============================================================
-# BELL-STATE CREATION
-# ============================================================
 
 def create_bell_pair(qc):
     """
-    Create a Bell pair using qubits 1 and 2.
+    Create:
 
-    |Φ+> = (|00> + |11>) / sqrt(2)
+        |Phi+> = (|00> + |11>) / sqrt(2)
+
+    using q1 and q2.
     """
 
     qc.h(1)
     qc.cx(1, 2)
 
 
-# ============================================================
-# TELEPORTATION
-# ============================================================
 
-def teleport_state(qc):
+
+def teleport_state(
+    qc,
+    basis,
+    bit
+):
     """
-    Teleport the state on qubit 0 to qubit 2.
+    Teleport the quantum state encoded by (basis, bit)
+    from q0 to q2.
 
     Qubits:
-        q0 -> original quantum state
-        q1 -> Alice's Bell-pair qubit
-        q2 -> Bob's Bell-pair qubit
+
+        q0 -> message state
+        q1 -> Alice's Bell qubit
+        q2 -> Bob's Bell qubit
 
     Classical bits:
-        c0 -> first Bell measurement result
-        c1 -> second Bell measurement result
+
+        c0 -> Alice's first measurement
+        c1 -> Alice's second measurement
+        c2 -> Bob's final measurement
     """
 
-    # Alice performs the Bell-state measurement
-    # operations on q0 and q1.
+    # --------------------------------------------------------
+    # 1. Prepare message state
+    # --------------------------------------------------------
+
+    prepare_state(
+        qc,
+        basis,
+        bit,
+        qubit=0
+    )
+
+    
+
+    create_bell_pair(qc)
+
 
     qc.cx(0, 1)
     qc.h(0)
 
-    # Measure Alice's two qubits.
-
     qc.measure(0, 0)
     qc.measure(1, 1)
 
-    # --------------------------------------------------------
-    # Pauli corrections at Bob
-    # --------------------------------------------------------
-
-    # If Alice's second measurement bit is 1:
-    # apply X correction.
-
+ 
+    # X correction controlled by c1
     with qc.if_test(
         (qc.clbits[1], 1)
     ):
         qc.x(2)
 
-    # If Alice's first measurement bit is 1:
-    # apply Z correction.
-
+    # Z correction controlled by c0
     with qc.if_test(
         (qc.clbits[0], 1)
     ):
         qc.z(2)
 
-
-# ============================================================
-# SIGNATURE GENERATION
-# ============================================================
-
-def generate_signature(
-    message,
-    shots=1000
-):
-    """
-    Generate a simulated teleportation-based
-    quantum digital signature.
-
-    This is a simulation/prototype model and
-    not a production cryptographic signature.
-    """
-
-    if not isinstance(message, str):
-
-        raise TypeError(
-            "Message must be a string"
-        )
-
-    if not message:
-
-        raise ValueError(
-            "Message cannot be empty"
-        )
-
-    if shots <= 0:
-
-        raise ValueError(
-            "Shots must be greater than zero"
-        )
-
-    # --------------------------------------------------------
-    # Classical message hash
-    # --------------------------------------------------------
-
-    message_hash = hashlib.sha256(
-        message.encode()
-    ).hexdigest()
-
-    # --------------------------------------------------------
-    # Deterministic quantum-state representation
-    # --------------------------------------------------------
-
-    state = message_to_state(message)
-
-    # --------------------------------------------------------
-    # Create 3-qubit circuit
-    #
-    # q0 -> message/signing state
-    # q1 -> Alice's Bell qubit
-    # q2 -> Bob's Bell qubit
-    #
-    # c0 -> q0 measurement
-    # c1 -> q1 measurement
-    # c2 -> Bob's final measurement
-    # --------------------------------------------------------
-
-    qc = QuantumCircuit(3, 3)
-
-    # --------------------------------------------------------
-    # 1. Prepare quantum state
-    # --------------------------------------------------------
-
-    prepare_state(
-        qc,
-        state,
-        qubit=0
-    )
-
-    # --------------------------------------------------------
-    # 2. Create Bell pair
-    # --------------------------------------------------------
-
-    create_bell_pair(qc)
-
-    # --------------------------------------------------------
-    # 3. Teleport state
-    # --------------------------------------------------------
-
-    teleport_state(qc)
-
-    # --------------------------------------------------------
-    # 4. Measure Bob's reconstructed state
-    #
-    # The state was encoded as a Pauli eigenstate,
-    # therefore the matching basis should produce
-    # the +1 eigenstate result, represented here
-    # by computational outcome 0.
-    # --------------------------------------------------------
+   
 
     apply_measurement_basis(
         qc,
-        state,
+        basis,
         qubit=2
     )
 
     qc.measure(2, 2)
 
-    # --------------------------------------------------------
-    # 5. Run quantum simulation
-    # --------------------------------------------------------
+
+
+def generate_quantum_signature_element(
+    bit,
+    shots
+):
+    """
+    Generate and simulate one quantum signature element.
+
+    A random Pauli basis is selected independently from the
+    classical SHA-256 fingerprint.
+
+    The message bit determines whether the + or - eigenstate
+    is prepared.
+
+    Returns the basis, bit, measurement results and accuracy.
+    """
+
+    basis = secrets.choice(
+        PAULI_BASES
+    )
+
+    qc = QuantumCircuit(3, 3)
+
+    teleport_state(
+        qc,
+        basis,
+        bit
+    )
 
     simulator = AerSimulator()
 
@@ -291,9 +293,167 @@ def generate_signature(
 
     counts = result.get_counts()
 
-    # --------------------------------------------------------
-    # 6. Create signature record
-    # --------------------------------------------------------
+    
+
+    expected_bit = bit
+
+    correct_shots = 0
+
+    for outcome, count in counts.items():
+
+        if not outcome:
+            continue
+
+        # Qiskit displays c2 c1 c0.
+        bob_bit = int(
+            outcome[0]
+        )
+
+        if bob_bit == expected_bit:
+            correct_shots += count
+
+    accuracy = (
+        correct_shots / shots
+    )
+
+    return {
+        "basis": basis,
+        "bit": bit,
+        "expected_outcome": str(bit),
+        "measurement_results": counts,
+        "correct_shots": correct_shots,
+        "shots": shots,
+        "accuracy": accuracy
+    }
+
+
+
+def generate_signature(
+    message,
+    shots=1000,
+    max_bits=None
+):
+    """
+    Generate a teleportation-based quantum signature
+    simulation.
+
+    Architecture:
+
+        MESSAGE
+           |
+           +--------------------------+
+           |                          |
+           v                          v
+      SHA-256                    UTF-8 bits
+           |                          |
+           v                          v
+    classical fingerprint      quantum encoding
+                                      |
+                                      v
+                                random Pauli basis
+                                      |
+                                      v
+                                teleportation
+                                      |
+                                      v
+                                measurement
+                                      |
+                                      v
+                              quantum signature
+
+    SHA-256 is NOT used to select the quantum states.
+
+    This is a QDS-inspired simulation/prototype, not a
+    production quantum digital signature implementation.
+    """
+
+   
+
+    if not isinstance(message, str):
+        raise TypeError(
+            "Message must be a string"
+        )
+
+    if not message:
+        raise ValueError(
+            "Message cannot be empty"
+        )
+
+    if not isinstance(shots, int):
+        raise TypeError(
+            "Shots must be an integer"
+        )
+
+    if shots <= 0:
+        raise ValueError(
+            "Shots must be greater than zero"
+        )
+
+    
+    message_hash = calculate_message_hash(
+        message
+    )
+
+
+    message_bits = message_to_bits(
+        message
+    )
+
+    # Prevent extremely large circuits during experimentation.
+    if max_bits is not None:
+
+        if not isinstance(max_bits, int):
+            raise TypeError(
+                "max_bits must be an integer or None"
+            )
+
+        if max_bits <= 0:
+            raise ValueError(
+                "max_bits must be greater than zero"
+            )
+
+        message_bits = message_bits[
+            :max_bits
+        ]
+
+    quantum_signature = []
+
+    for index, bit in enumerate(
+        message_bits
+    ):
+
+        element = (
+            generate_quantum_signature_element(
+                bit=bit,
+                shots=shots
+            )
+        )
+
+        element["index"] = index
+
+        quantum_signature.append(
+            element
+        )
+
+   
+
+    total_correct = sum(
+        element["correct_shots"]
+        for element in quantum_signature
+    )
+
+    total_shots = sum(
+        element["shots"]
+        for element in quantum_signature
+    )
+
+    quantum_accuracy = (
+        total_correct / total_shots
+        if total_shots > 0
+        else 0.0
+    )
+
+   
 
     signature = {
 
@@ -304,28 +464,53 @@ def generate_signature(
             datetime.now().isoformat(),
 
         "protocol":
-            "Teleportation-based QDS Simulation",
+            PROTOCOL_NAME,
 
         "protocol_version":
-            "1.0",
+            PROTOCOL_VERSION,
 
-        "message":
-            message,
+     
 
-        "message_hash":
-            message_hash,
+        "classical_integrity": {
 
-        "quantum_state":
-            state,
+            "hash_algorithm":
+                "SHA-256",
 
-        "measurement_basis":
-            state,
+            "message_hash":
+                message_hash
+        },
 
-        "expected_outcome":
-            "0",
+       
 
-        "measurement_results":
-            counts,
+        "message_length_bytes":
+            len(
+                message.encode("utf-8")
+            ),
+
+        "quantum_bit_count":
+            len(message_bits),
+
+       
+
+        "quantum_signature": {
+
+            "encoding":
+                "Pauli eigenstates",
+
+            "bases":
+                PAULI_BASES,
+
+            "transport":
+                "Quantum teleportation",
+
+            "elements":
+                quantum_signature,
+
+            "overall_accuracy":
+                quantum_accuracy
+        },
+
+      
 
         "shots":
             shots
@@ -334,28 +519,24 @@ def generate_signature(
     return signature
 
 
-# ============================================================
-# TEST
-# ============================================================
+
 
 if __name__ == "__main__":
 
     message = "SIH26141"
 
     signature = generate_signature(
-        message
+        message,
+        shots=1000
     )
 
     print()
-    print("========================================")
-    print("      QDS SIGNATURE GENERATION")
-    print("========================================")
+    print("=" * 60)
+    print("     TELEPORTATION-BASED QUANTUM SIGNATURE")
+    print("=" * 60)
 
     print("\nSignature ID:")
     print(signature["signature_id"])
-
-    print("\nTimestamp:")
-    print(signature["timestamp"])
 
     print("\nProtocol:")
     print(signature["protocol"])
@@ -364,24 +545,54 @@ if __name__ == "__main__":
     print(signature["protocol_version"])
 
     print("\nMessage:")
-    print(signature["message"])
+    print(message)
 
-    print("\nMessage Hash:")
-    print(signature["message_hash"])
+    print("\nClassical Integrity:")
+    print(
+        signature[
+            "classical_integrity"
+        ]
+    )
 
-    print("\nQuantum State:")
-    print(signature["quantum_state"])
+    print("\nQuantum Bit Count:")
+    print(
+        signature[
+            "quantum_bit_count"
+        ]
+    )
 
-    print("\nMeasurement Basis:")
-    print(signature["measurement_basis"])
+    print("\nQuantum Encoding:")
+    print(
+        signature[
+            "quantum_signature"
+        ][
+            "encoding"
+        ]
+    )
 
-    print("\nExpected Measurement Outcome:")
-    print(signature["expected_outcome"])
+    print("\nQuantum Transport:")
+    print(
+        signature[
+            "quantum_signature"
+        ][
+            "transport"
+        ]
+    )
 
-    print("\nMeasurement Results:")
-    print(signature["measurement_results"])
+    print("\nQuantum Verification Accuracy:")
+    print(
+        f"{signature['quantum_signature']['overall_accuracy'] * 100:.2f}%"
+    )
 
-    print("\nShots:")
-    print(signature["shots"])
+    print("\nNumber of Quantum Signature Elements:")
+    print(
+        len(
+            signature[
+                "quantum_signature"
+            ][
+                "elements"
+            ]
+        )
+    )
 
-    print("\n========================================")
+    print("\n" + "=" * 60)

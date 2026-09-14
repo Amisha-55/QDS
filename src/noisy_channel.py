@@ -1,11 +1,8 @@
+
 from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 from qiskit_aer.noise import NoiseModel, depolarizing_error
 
-
-# ============================================
-# QUANTUM STATE PREPARATION
-# ============================================
 
 def prepare_state(qc, state):
     """
@@ -30,10 +27,6 @@ def prepare_state(qc, state):
         raise ValueError("State must be Z, X, or Y")
 
 
-# ============================================
-# PAULI ATTACK
-# ============================================
-
 def apply_attack(qc, attack):
     """
     Apply a simulated Pauli attack.
@@ -55,10 +48,6 @@ def apply_attack(qc, attack):
         raise ValueError(f"Unknown attack: {attack}")
 
 
-# ============================================
-# MEASUREMENT BASIS
-# ============================================
-
 def apply_measurement_basis(qc, basis):
     """
     Convert the selected Pauli measurement basis
@@ -79,10 +68,6 @@ def apply_measurement_basis(qc, basis):
         raise ValueError("Basis must be Z, X, or Y")
 
 
-# ============================================
-# NOISY QUANTUM EXPERIMENT
-# ============================================
-
 def run_noisy_experiment(
     state,
     attack=None,
@@ -98,27 +83,18 @@ def run_noisy_experiment(
 
     qc = QuantumCircuit(1, 1)
 
-    # 1. Prepare quantum state
     prepare_state(qc, state)
 
-    # 2. Apply attack
     apply_attack(qc, attack)
 
-    # 3. Channel placeholder
     qc.id(0)
 
-    # 4. Select measurement basis
     apply_measurement_basis(
         qc,
         measurement_basis
     )
 
-    # 5. Measure
     qc.measure(0, 0)
-
-    # ========================================
-    # DEPOLARIZING NOISE MODEL
-    # ========================================
 
     noise_model = NoiseModel()
 
@@ -134,10 +110,6 @@ def run_noisy_experiment(
             ["id"]
         )
 
-    # ========================================
-    # SIMULATOR
-    # ========================================
-
     simulator = AerSimulator(
         noise_model=noise_model
     )
@@ -149,10 +121,6 @@ def run_noisy_experiment(
 
     return result.get_counts()
 
-
-# ============================================
-# BASIC TEST
-# ============================================
 
 if __name__ == "__main__":
 
