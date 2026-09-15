@@ -29,6 +29,14 @@ from noisy_channel import run_noisy_experiment
 from multi_state_detector import run_multi_state_test
 from threat_detector import detect_threat, calculate_error_rate
 from config import SHOTS, NOISE_PROBABILITY, NOISE_THRESHOLDS
+from forgery_attack import simulate_forgery
+from impersonation_attack import simulate_impersonation
+from replay_attack import (
+    simulate_replay,
+    check_replay,
+    reset_replay_registry,
+    build_replay_packet,
+)
 
 
 # ============================================================
@@ -80,67 +88,18 @@ DATASET_COLUMNS = [
     "qds_valid",
     "replay_detected",
     "attack_detected",
+    "likely_attack_type",
     "final_decision",
     "ground_truth",
 ]
 
 
 # ============================================================
-# REPLAY REGISTRY  (in-memory for the pipeline run)
-# ============================================================
-
-_USED_SIGNATURE_IDS = set()
-
-
-def check_replay(signature_id):
-    """Return True if this signature_id was already seen."""
-    if signature_id in _USED_SIGNATURE_IDS:
-        return True
-    _USED_SIGNATURE_IDS.add(signature_id)
-    return False
-
-
-def reset_replay_registry():
-    """Clear between experiment batches if needed."""
-    _USED_SIGNATURE_IDS.clear()
-
-
-# ============================================================
-# A. SIGNATURE GENERATION  (delegated to qds_signature)
-#    called internally by create_secure_packet
-# ============================================================
-
-
-# ============================================================
 # B. SECURE PACKET + AUTHENTICATION
 # ============================================================
 
-def build_legitimate_packet(message, private_key, signer_id):
-    """
-    Create a legitimate secure packet and stamp it with a
-    unique signature_id for replay detection.
-    """
-    packet = create_secure_packet(
-        message,
-        private_key,
-        signer_id,
-    )
-
-    # Add replay-protection metadata and re-sign
-    sig_id = str(uuid.uuid4())
-    timestamp = datetime.now(timezone.utc).isoformat()
-
-    packet["payload"]["signature_id"] = sig_id
-    packet["payload"]["timestamp"] = timestamp
-
-    # Re-sign to cover the new fields
-    payload_bytes = canonical_json(packet["payload"])
-    new_sig = sign_data(private_key, payload_bytes)
-    packet["classical_signature"] = base64.b64encode(
-        new_sig
-    ).decode("ascii")
-
-    return packet
+# Use build_replay_packet directly from replay_attack
+build_legitimate_packet = build_replay_packet
 
 
 # ============================================================
@@ -174,39 +133,9 @@ def verify_packet(packet, public_key, threshold=DEFAULT_THRESHOLD):
 
 # ============================================================
 # D. ATTACK SCENARIOS
+# (simulate_forgery, simulate_impersonation, and simulate_replay
+#  are imported directly from their respective attack modules)
 # ============================================================
-
-def simulate_forgery(packet):
-    """
-    Attacker modifies the message inside an existing packet
-    without re-signing.
-    """
-    forged = deepcopy(packet)
-    original_msg = forged["payload"]["message"]
-    forged["payload"]["message"] = "FORGED-" + original_msg
-    return forged
-
-
-def simulate_impersonation(message, signer_id):
-    """
-    Attacker generates their own key pair but claims to be
-    the legitimate signer.
-    """
-    attacker_priv, _attacker_pub = generate_key_pair()
-    packet = build_legitimate_packet(
-        message,
-        attacker_priv,
-        signer_id,
-    )
-    return packet
-
-
-def simulate_replay(packet):
-    """
-    Attacker re-sends an exact copy of a previously accepted
-    packet (same signature_id).
-    """
-    return deepcopy(packet)
 
 
 def simulate_channel_attack(state, noise_probability, shots):
@@ -282,6 +211,24 @@ def extract_quantum_stats(packet, verification_result):
     }
 
 
+def classify_attack(result):
+    """Return the most likely attack type from verification evidence."""
+
+    if result.get("replay_detected"):
+        return "REPLAY"
+
+    if result.get("final_decision") == "TRUSTED":
+        return "LEGITIMATE"
+
+    if not result.get("classical_signature_valid", False):
+        return "FORGERY_OR_IMPERSONATION"
+
+    if result.get("qds_result", {}).get("decision") != "VALID":
+        return "CHANNEL_ATTACK"
+
+    return "UNKNOWN"
+
+
 # ============================================================
 # E. SINGLE EXPERIMENT RUNNER
 # ============================================================
@@ -330,6 +277,7 @@ def run_single_experiment(
         row["qds_valid"] = result.get("qds_result", {}).get("decision", "NOT VERIFIED") == "VALID"
         row["replay_detected"] = result["replay_detected"]
         row["attack_detected"] = result["final_decision"] != "TRUSTED"
+        row["likely_attack_type"] = classify_attack(result)
         row["final_decision"] = result["final_decision"]
 
     # --------------------------------------------------
@@ -349,6 +297,7 @@ def run_single_experiment(
         row["qds_valid"] = result.get("qds_result", {}).get("decision", "NOT VERIFIED") == "VALID"
         row["replay_detected"] = result["replay_detected"]
         row["attack_detected"] = result["final_decision"] != "TRUSTED"
+        row["likely_attack_type"] = classify_attack(result)
         row["final_decision"] = result["final_decision"]
 
     # --------------------------------------------------
@@ -365,6 +314,7 @@ def run_single_experiment(
         row["qds_valid"] = result.get("qds_result", {}).get("decision", "NOT VERIFIED") == "VALID"
         row["replay_detected"] = result["replay_detected"]
         row["attack_detected"] = result["final_decision"] != "TRUSTED"
+        row["likely_attack_type"] = classify_attack(result)
         row["final_decision"] = result["final_decision"]
 
     # --------------------------------------------------
@@ -388,6 +338,7 @@ def run_single_experiment(
         row["qds_valid"] = result.get("qds_result", {}).get("decision", "NOT VERIFIED") == "VALID"
         row["replay_detected"] = result["replay_detected"]
         row["attack_detected"] = result["replay_detected"]  # replay is the attack signal
+        row["likely_attack_type"] = classify_attack(result)
         row["final_decision"] = result["final_decision"]
 
     # --------------------------------------------------
@@ -424,6 +375,7 @@ def run_single_experiment(
         row["qds_valid"] = "N/A"
         row["replay_detected"] = False
         row["attack_detected"] = detected
+        row["likely_attack_type"] = "CHANNEL_ATTACK" if detected else "LEGITIMATE"
         row["final_decision"] = "INVALID / SUSPICIOUS" if detected else "TRUSTED"
 
     else:
@@ -472,6 +424,8 @@ def run_pipeline(
     register_public_key(SIGNER_ID, alice_public)
     print(f"\n{SIGNER_ID}'s Ed25519 key pair generated and registered.")
 
+    reset_replay_registry()
+
     rows = []
     experiment_number = 1
 
@@ -499,6 +453,7 @@ def run_pipeline(
             print(
                 f"  [{experiment_number - 1}] {attack_type:20s} | "
                 f"detected={str(row['attack_detected']):5s} | "
+                f"likely={row['likely_attack_type']:24s} | "
                 f"decision={row['final_decision']}"
             )
 

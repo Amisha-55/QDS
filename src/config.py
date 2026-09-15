@@ -13,3 +13,8 @@ NOISE_THRESHOLDS = {
     0.05: 0.0255,
     0.10: 0.0331
 }
+
+# Threshold for the configured noise level.
+# Keep this derived from the calibration table so the detector and
+# dataset generation use the same noise-aware threshold.
+THRESHOLD = NOISE_THRESHOLDS[NOISE_PROBABILITY]
