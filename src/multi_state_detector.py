@@ -8,10 +8,6 @@ from config import (
 )
 
 
-# ============================================
-# EXPECTED MEASUREMENT BEHAVIOR
-# ============================================
-
 def expected_probability_one(state, basis):
     """
     Return the expected P(1) for a Pauli eigenstate
@@ -30,10 +26,6 @@ def expected_probability_one(state, basis):
     return 0.5
 
 
-# ============================================
-# CROSS-BASIS DEVIATION
-# ============================================
-
 def calculate_deviation(observed_p1, expected_p1):
     """
     Calculate the absolute deviation between
@@ -42,10 +34,6 @@ def calculate_deviation(observed_p1, expected_p1):
 
     return abs(observed_p1 - expected_p1)
 
-
-# ============================================
-# NOISE-AWARE THRESHOLD
-# ============================================
 
 def get_threshold(noise_probability):
     """
@@ -64,10 +52,6 @@ def get_threshold(noise_probability):
         f"noise probability {noise_probability}"
     )
 
-
-# ============================================
-# MULTI-STATE THREAT DETECTION
-# ============================================
 
 def run_multi_state_test(
     attack=None,
@@ -146,10 +130,6 @@ def run_multi_state_test(
         decision
     )
 
-
-# ============================================
-# TEST PROGRAM
-# ============================================
 
 if __name__ == "__main__":
 

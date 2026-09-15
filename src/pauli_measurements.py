@@ -6,11 +6,9 @@ def measure_state(basis, state=0, shots=1000):
 
     qc = QuantumCircuit(1, 1)
 
-    # Prepare |1> if requested
     if state == 1:
         qc.x(0)
 
-    # Change measurement basis
     if basis == "X":
         qc.h(0)
 
@@ -24,7 +22,6 @@ def measure_state(basis, state=0, shots=1000):
     else:
         raise ValueError("Basis must be X, Y, or Z")
 
-    # Projective measurement
     qc.measure(0, 0)
 
     simulator = AerSimulator()

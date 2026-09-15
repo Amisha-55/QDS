@@ -1,161 +1,288 @@
-from qds_signature import generate_signature
-from qds_verify import verify_signature
-from copy import deepcopy
-import uuid
+from classical_signature import generate_key_pair
+from secure_packet import (
+    create_secure_packet,
+    verify_secure_packet
+)
+from trusted_keys import register_public_key
 
 
-# ----------------------------------------
-# AUTHORIZED SIGNERS
-# ----------------------------------------
-
-AUTHORIZED_SIGNERS = {
-    "Alice": "ALICE-SECRET-KEY"
-}
 
 
-def authenticate_signer(signer_id, credential):
-    """
-    Verify whether the supplied signer identity
-    has the correct authentication credential.
-    """
-    expected_credential = AUTHORIZED_SIGNERS.get(signer_id)
+MESSAGE = "SIH26141"
 
-    if expected_credential is None:
-        return False
+ALICE_ID = "Alice"
+ATTACKER_ID = "Attacker"
 
-    return credential == expected_credential
-
-
-# ----------------------------------------
-# MAIN IMPERSONATION ATTACK SIMULATION
-# ----------------------------------------
-
-message = "SIH26141"
 
 print("========================================")
-print("     IMPERSONATION ATTACK SIMULATION")
+print("      IMPERSONATION ATTACK SIMULATION")
 print("========================================")
 
 
-# ----------------------------------------
-# 1. LEGITIMATE SIGNER
-# ----------------------------------------
+# ==================================================
+# 1. GENERATE ALICE'S KEY PAIR
+# ==================================================
 
-legitimate_signature = generate_signature(message)
+print("\n[1] GENERATING ALICE'S KEY PAIR")
 
-legitimate_signature["signature_id"] = str(uuid.uuid4())
-legitimate_signature["signer_id"] = "Alice"
-legitimate_signature["credential"] = "ALICE-SECRET-KEY"
+alice_private_key, alice_public_key = generate_key_pair()
+
+print("Alice's Ed25519 key pair generated.")
 
 
-print("\n[1] LEGITIMATE SIGNER")
+
+
+print("\n[2] REGISTERING ALICE'S TRUSTED PUBLIC KEY")
+
+try:
+
+    register_public_key(
+        ALICE_ID,
+        alice_public_key
+    )
+
+    print(
+        "Alice's public key is registered as trusted."
+    )
+
+except ValueError as error:
+
+    print(
+        f"Key registration error: {error}"
+    )
+
+    print(
+        "\nIf Alice already has a different key "
+        "registered, remove the old prototype "
+        "Alice entry from keys/public_keys.json "
+        "before running this test."
+    )
+
+    raise
+
+
+
+
+print("\n[3] GENERATING ATTACKER'S KEY PAIR")
+
+attacker_private_key, attacker_public_key = (
+    generate_key_pair()
+)
+
+print(
+    "Attacker's Ed25519 key pair generated."
+)
+
+print(
+    "\nImportant:"
+)
+
+print(
+    "The attacker has their own private key,"
+    " but does NOT have Alice's private key."
+)
+
+
+
+
+print("\n[4] CREATING LEGITIMATE ALICE PACKET")
+
+legitimate_packet = create_secure_packet(
+    MESSAGE,
+    alice_private_key,
+    ALICE_ID
+)
 
 print("Signer ID:")
-print(legitimate_signature["signer_id"])
-
-print("Signature ID:")
-print(legitimate_signature["signature_id"])
-
-
-# Authentication
-authenticated = authenticate_signer(
-    legitimate_signature["signer_id"],
-    legitimate_signature["credential"]
+print(
+    legitimate_packet["payload"]["signer_id"]
 )
 
-print("\nIdentity Authentication:")
-print("AUTHENTICATED" if authenticated else "NOT AUTHENTICATED")
+print("Message:")
+print(
+    legitimate_packet["payload"]["message"]
+)
 
 
-# Quantum verification
-legitimate_result = verify_signature(
-    legitimate_signature,
-    message
+
+
+print("\n[5] VERIFYING LEGITIMATE ALICE PACKET")
+
+legitimate_result = verify_secure_packet(
+    legitimate_packet,
+    alice_public_key
+)
+
+print("\nEd25519 Verification:")
+print(
+    "VALID"
+    if legitimate_result["classical_signature_valid"]
+    else "INVALID"
 )
 
 print("\nQuantum Verification:")
 print(
-    f"Verification Accuracy: "
-    f"{legitimate_result['verification_accuracy'] * 100:.2f}%"
+    legitimate_result["qds_result"]["decision"]
 )
 
-print("Decision:")
-print(legitimate_result["decision"])
-
-
-# ----------------------------------------
-# 2. IMPERSONATION ATTACK
-# ----------------------------------------
-
-impersonated_signature = deepcopy(
-    legitimate_signature
-)
-
-# Attacker claims to be Alice but does not possess
-# Alice's authentication credential.
-impersonated_signature["signer_id"] = "Alice"
-impersonated_signature["credential"] = "ATTACKER-CREDENTIAL"
-
-
-print("\n[2] IMPERSONATION ATTACK")
-
-print("Claimed Signer ID:")
-print(impersonated_signature["signer_id"])
-
-print("Attacker Credential:")
-print(impersonated_signature["credential"])
-
-
-# Authentication check
-attacker_authenticated = authenticate_signer(
-    impersonated_signature["signer_id"],
-    impersonated_signature["credential"]
-)
-
-print("\nIdentity Authentication:")
+print("\nFinal Decision:")
 print(
-    "AUTHENTICATED"
-    if attacker_authenticated
-    else "AUTHENTICATION FAILED"
+    legitimate_result["final_decision"]
 )
 
 
-# Quantum verification
-impersonated_result = verify_signature(
-    impersonated_signature,
-    message
+
+
+print("\n[6] CREATING IMPERSONATION ATTACK")
+
+print(
+    "Attacker claims to be:",
+    ALICE_ID
+)
+
+print(
+    "Attacker actually owns:",
+    ATTACKER_ID
+)
+
+
+
+
+impersonated_packet = create_secure_packet(
+    MESSAGE,
+    attacker_private_key,
+    ALICE_ID
+)
+
+print("\nClaimed Signer ID:")
+print(
+    impersonated_packet["payload"]["signer_id"]
+)
+
+print("\nActual Signing Key:")
+print(
+    "ATTACKER'S PRIVATE KEY"
+)
+
+
+
+
+print("\n[7] RECEIVER USES ALICE'S TRUSTED PUBLIC KEY")
+
+print(
+    "The receiver does NOT trust the public key "
+    "provided by the attacker."
+)
+
+print(
+    "The receiver uses Alice's registered "
+    "trusted public key."
+)
+
+
+
+
+print("\n[8] VERIFYING IMPERSONATED PACKET")
+
+impersonated_result = verify_secure_packet(
+    impersonated_packet,
+    alice_public_key
+)
+
+print("\nEd25519 Verification:")
+print(
+    "VALID"
+    if impersonated_result["classical_signature_valid"]
+    else "INVALID"
 )
 
 print("\nQuantum Verification:")
-print(
-    f"Verification Accuracy: "
-    f"{impersonated_result['verification_accuracy'] * 100:.2f}%"
-)
 
-print("Cryptographic Decision:")
-print(impersonated_result["decision"])
+if "decision" in impersonated_result["qds_result"]:
 
-
-# ----------------------------------------
-# FINAL IMPERSONATION DECISION
-# ----------------------------------------
-
-if (
-    not attacker_authenticated
-    and impersonated_result["decision"] == "VALID"
-):
-    final_decision = "IMPERSONATION ATTACK DETECTED"
-
-elif not attacker_authenticated:
-    final_decision = "IMPERSONATION ATTACK DETECTED"
+    print(
+        impersonated_result["qds_result"]["decision"]
+    )
 
 else:
-    final_decision = "NO IMPERSONATION DETECTED"
+
+    print("NOT VERIFIED")
+
+
+print("\nFinal Decision:")
+print(
+    impersonated_result["final_decision"]
+)
+
+
+
+
+ed25519_failed = not (
+    impersonated_result[
+        "classical_signature_valid"
+    ]
+)
+
+packet_rejected = (
+    impersonated_result["final_decision"]
+    == "INVALID / SUSPICIOUS"
+)
+
+
+
+
+if (
+    ed25519_failed
+    and packet_rejected
+):
+
+    final_decision = (
+        "IMPERSONATION ATTACK DETECTED"
+    )
+
+else:
+
+    final_decision = (
+        "IMPERSONATION ATTACK NOT DETECTED"
+    )
+
+
 
 
 print("\n========================================")
 print("             ATTACK RESULT")
 print("========================================")
 
+print("\nAttack Type:")
+print("Signer Impersonation")
+
+print("\nClaimed Identity:")
+print(ALICE_ID)
+
+print("\nActual Signing Entity:")
+print(ATTACKER_ID)
+
+print("\nAlice's Trusted Public Key:")
+print("USED BY RECEIVER")
+
+print("\nAttacker's Private Key:")
+print("USED TO CREATE FORGED PACKET")
+
+print("\nEd25519 Protection:")
+
+if ed25519_failed:
+
+    print(
+        "PASSED - Impersonation was detected"
+    )
+
+else:
+
+    print(
+        "FAILED - Impersonation was not detected"
+    )
+
+print("\nFinal Result:")
 print(final_decision)
 
+print("\n========================================")

@@ -8,13 +8,6 @@ SHOTS = 1000
 STATES = ["Z", "X", "Y"]
 BASES = ["Z", "X", "Y"]
 
-# Expected P(1) for a legitimate state measured in a basis.
-#
-# Same basis:
-#   P(1) = 0
-#
-# Different basis:
-#   P(1) = 0.5
 EXPECTED_P1 = {
     ("Z", "Z"): 0.0,
     ("Z", "X"): 0.5,
@@ -34,15 +27,12 @@ def prepare_state(qc, state):
     """Prepare a Pauli eigenstate."""
 
     if state == "Z":
-        # |0>
         pass
 
     elif state == "X":
-        # |+>
         qc.h(0)
 
     elif state == "Y":
-        # |+i>
         qc.h(0)
         qc.s(0)
 

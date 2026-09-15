@@ -10,10 +10,6 @@ from noisy_channel import (
 from config import SHOTS, NOISE_PROBABILITY, THRESHOLD
 
 
-# ============================================
-# QDS SECURITY DATASET GENERATOR
-# ============================================
-
 OUTPUT_FILE = os.path.join(
     os.path.dirname(os.path.dirname(__file__)),
     "data",
@@ -74,7 +70,6 @@ def generate_dataset():
                 total_zero += zero_count
                 total_one += one_count
 
-                # Store one row for each state
                 p0, p1, error_rate = calculate_statistics(
                     counts,
                     SHOTS
@@ -103,10 +98,6 @@ def generate_dataset():
                 })
 
             experiment_number += 1
-
-    # ============================================
-    # WRITE CSV
-    # ============================================
 
     fieldnames = [
         "experiment_id",

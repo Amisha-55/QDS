@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from classical_signature import generate_key_pair
 
 from trusted_keys import (
@@ -16,25 +18,21 @@ print("       QDS + CLASSICAL SIGNATURE")
 print("========================================")
 
 
-# ========================================
-# 1. SENDER KEY GENERATION
-# ========================================
+print("\n[1] SENDER KEY GENERATION")
 
-sender_private_key, sender_public_key = generate_key_pair()
+sender_private_key, sender_public_key = (
+    generate_key_pair()
+)
 
 register_public_key(
     "SENDER",
     sender_public_key
 )
 
-print("\n[1] SENDER KEY GENERATION")
 print("Private key: Generated")
 print("Public key: Generated")
+print("Public key registered as trusted.")
 
-
-# ========================================
-# 2. SENDER SENDS MESSAGE
-# ========================================
 
 message = "Hello Receiver"
 
@@ -45,22 +43,30 @@ packet = create_secure_packet(
 )
 
 print("\n[2] SENDER SENDS MESSAGE")
+
 print("Message:")
 print(message)
 
+print("\nSecure packet created.")
 
-# ========================================
-# 3. RECEIVER VERIFICATION
-# ========================================
 
-sender_trusted_public_key = get_public_key("SENDER")
+print("\n[3] RECEIVER LOADS TRUSTED PUBLIC KEY")
+
+sender_trusted_public_key = get_public_key(
+    "SENDER"
+)
+
+print(
+    "Trusted public key loaded for SENDER."
+)
+
 
 result = verify_secure_packet(
     packet,
     sender_trusted_public_key
 )
 
-print("\n[3] RECEIVER VERIFICATION")
+print("\n[4] RECEIVER VERIFICATION")
 
 print(
     "Classical Signature:",
@@ -78,27 +84,33 @@ print(
 )
 
 
-# ========================================
-# 4. ATTACKER MODIFIES MESSAGE
-# ========================================
-
-tampered_packet = packet.copy()
-
-tampered_packet["payload"] = packet["payload"].copy()
+tampered_packet = deepcopy(
+    packet
+)
 
 tampered_packet["payload"]["message"] = (
     "Hello Receiver!!!"
 )
 
-print("\n[4] ATTACKER MODIFIES MESSAGE")
+print("\n[5] ATTACKER MODIFIES MESSAGE")
+
+print("Original Message:")
+print(
+    packet["payload"]["message"]
+)
+
+print("Tampered Message:")
+print(
+    tampered_packet["payload"]["message"]
+)
 
 tampered_result = verify_secure_packet(
     tampered_packet,
     sender_trusted_public_key
 )
 
+print("\nClassical Signature:")
 print(
-    "Classical Signature:",
     tampered_result["classical_signature_valid"]
 )
 
@@ -108,44 +120,67 @@ print(
 )
 
 
-# ========================================
-# 5. ATTACKER MODIFIES QDS DATA
-# ========================================
-
-quantum_attack_packet = packet.copy()
-
-quantum_attack_packet["payload"] = (
-    packet["payload"].copy()
+quantum_attack_packet = deepcopy(
+    packet
 )
 
-quantum_attack_packet["payload"]["qds_signature"] = (
-    packet["payload"]["qds_signature"].copy()
+qds_signature = (
+    quantum_attack_packet[
+        "payload"
+    ][
+        "qds_signature"
+    ]
 )
 
-current_state = (
-    quantum_attack_packet["payload"]
-    ["qds_signature"]["quantum_state"]
+quantum_signature = (
+    qds_signature[
+        "quantum_signature"
+    ]
 )
 
-states = ["Z", "X", "Y"]
-
-for state in states:
-    if state != current_state:
-        quantum_attack_packet["payload"][
-            "qds_signature"
-        ]["quantum_state"] = state
-        break
+elements = quantum_signature[
+    "elements"
+]
 
 
-print("\n[5] ATTACKER MODIFIES QDS DATA")
+if elements:
+
+    first_element = elements[0]
+
+    original_bit = first_element.get(
+        "bit"
+    )
+
+    if original_bit in (0, 1):
+
+        first_element["bit"] = (
+            1 - original_bit
+        )
+
+    else:
+
+        first_element["expected_outcome"] = (
+            "1"
+            if first_element.get(
+                "expected_outcome"
+            ) == 0
+            else "0"
+        )
+
+
+print("\n[6] ATTACKER MODIFIES QDS DATA")
+
+print(
+    "Quantum signature element modified."
+)
 
 quantum_attack_result = verify_secure_packet(
     quantum_attack_packet,
     sender_trusted_public_key
 )
 
+print("\nClassical Signature:")
 print(
-    "Classical Signature:",
     quantum_attack_result[
         "classical_signature_valid"
     ]
@@ -157,3 +192,63 @@ print(
         "final_decision"
     ]
 )
+
+
+print("\n========================================")
+print("             SECURITY SUMMARY")
+print("========================================")
+
+
+print("\nLegitimate Packet:")
+
+print(
+    "Classical Signature:",
+    result["classical_signature_valid"]
+)
+
+print(
+    "QDS Verification:",
+    result["qds_result"]["decision"]
+)
+
+print(
+    "Final Decision:",
+    result["final_decision"]
+)
+
+
+print("\nMessage Tampering:")
+
+print(
+    "Classical Signature:",
+    tampered_result[
+        "classical_signature_valid"
+    ]
+)
+
+print(
+    "Final Decision:",
+    tampered_result[
+        "final_decision"
+    ]
+)
+
+
+print("\nQuantum Data Tampering:")
+
+print(
+    "Classical Signature:",
+    quantum_attack_result[
+        "classical_signature_valid"
+    ]
+)
+
+print(
+    "Final Decision:",
+    quantum_attack_result[
+        "final_decision"
+    ]
+)
+
+
+print("\n========================================")

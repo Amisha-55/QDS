@@ -1,157 +1,220 @@
-from qds_signature import generate_signature
-from qds_verify import verify_signature
 from copy import deepcopy
-import hashlib
-import uuid
+
+from classical_signature import generate_key_pair
+from secure_packet import (
+    create_secure_packet,
+    verify_secure_packet
+)
+from trusted_keys import register_public_key
 
 
-message = "SIH26141"
+
+
+MESSAGE = "SIH26141"
+FORGED_MESSAGE = "FAKE-SIH26141"
+SIGNER_ID = "Alice"
+
 
 print("========================================")
-print("          FORGERY ATTACK SIMULATION")
+print("        FORGERY ATTACK SIMULATION")
 print("========================================")
 
 
-# ----------------------------------------
-# 1. GENERATE LEGITIMATE SIGNATURE
-# ----------------------------------------
-
-legitimate_signature = generate_signature(message)
-
-legitimate_signature["signature_id"] = str(uuid.uuid4())
-
-# Create an integrity hash from important
-# signature information.
-legitimate_signature["integrity_hash"] = hashlib.sha256(
-    (
-        message
-        + legitimate_signature["quantum_state"]
-    ).encode()
-).hexdigest()
-
-print("\n[1] LEGITIMATE SIGNATURE")
-
-print("Message:")
-print(message)
-
-print("Quantum State:")
-print(legitimate_signature["quantum_state"])
-
-print("Signature ID:")
-print(legitimate_signature["signature_id"])
-
-print("Integrity Hash:")
-print(legitimate_signature["integrity_hash"])
 
 
-legitimate_result = verify_signature(
-    legitimate_signature,
-    message
+print("\n[1] GENERATING LEGITIMATE SIGNER")
+
+alice_private_key, alice_public_key = generate_key_pair()
+
+print("Signer ID:")
+print(SIGNER_ID)
+
+print("Ed25519 key pair generated.")
+
+
+
+
+print("\n[2] REGISTERING ALICE'S TRUSTED PUBLIC KEY")
+
+try:
+
+    register_public_key(
+        SIGNER_ID,
+        alice_public_key
+    )
+
+    print("Alice's public key is trusted.")
+
+except ValueError as error:
+
+    print(
+        f"Key registration error: {error}"
+    )
+
+    print(
+        "\nIf Alice already has a different key "
+        "registered, remove the old prototype "
+        "registry entry before running this test."
+    )
+
+    raise
+
+
+
+
+print("\n[3] CREATING LEGITIMATE SECURE PACKET")
+
+legitimate_packet = create_secure_packet(
+    MESSAGE,
+    alice_private_key,
+    SIGNER_ID
 )
-
-print("\nQuantum Verification:")
-print(
-    f"Verification Accuracy: "
-    f"{legitimate_result['verification_accuracy'] * 100:.2f}%"
-)
-
-print("Decision:")
-print(legitimate_result["decision"])
-
-
-# ----------------------------------------
-# 2. CREATE FORGED SIGNATURE
-# ----------------------------------------
-
-forged_signature = deepcopy(legitimate_signature)
-
-# Attacker modifies the message associated
-# with the signature.
-forged_message = "FAKE-SIH26141"
-
-print("\n[2] FORGED SIGNATURE")
 
 print("Original Message:")
-print(message)
+print(MESSAGE)
 
-print("Attacker's Modified Message:")
-print(forged_message)
-
-# Recalculate what the attacker claims to be
-# the correct integrity hash.
-forged_signature["integrity_hash"] = hashlib.sha256(
-    (
-        forged_message
-        + forged_signature["quantum_state"]
-    ).encode()
-).hexdigest()
-
-print("\nForged Integrity Hash:")
-print(forged_signature["integrity_hash"])
+print("Signer ID:")
+print(
+    legitimate_packet["payload"]["signer_id"]
+)
 
 
-# ----------------------------------------
-# 3. VERIFY FORGED SIGNATURE
-# ----------------------------------------
 
-forged_result = verify_signature(
-    forged_signature,
-    message
+
+print("\n[4] VERIFYING LEGITIMATE PACKET")
+
+legitimate_result = verify_secure_packet(
+    legitimate_packet,
+    alice_public_key
+)
+
+print("\nEd25519 Verification:")
+print(
+    "VALID"
+    if legitimate_result["classical_signature_valid"]
+    else "INVALID"
 )
 
 print("\nQuantum Verification:")
 print(
-    f"Verification Accuracy: "
-    f"{forged_result['verification_accuracy'] * 100:.2f}%"
+    legitimate_result["qds_result"]["decision"]
 )
 
-print("Cryptographic Decision:")
-print(forged_result["decision"])
-
-
-# ----------------------------------------
-# 4. INTEGRITY CHECK
-# ----------------------------------------
-
-expected_integrity_hash = hashlib.sha256(
-    (
-        message
-        + forged_signature["quantum_state"]
-    ).encode()
-).hexdigest()
-
-integrity_valid = (
-    forged_signature["integrity_hash"]
-    == expected_integrity_hash
+print("\nFinal Decision:")
+print(
+    legitimate_result["final_decision"]
 )
 
-print("\nIntegrity Verification:")
+
+
+
+print("\n[5] CREATING FORGED PACKET")
+
+forged_packet = deepcopy(
+    legitimate_packet
+)
+
+
+
+forged_packet["payload"]["message"] = FORGED_MESSAGE
+
+print("Original Message:")
+print(MESSAGE)
+
+print("Attacker's Modified Message:")
+print(FORGED_MESSAGE)
+
+print(
+    "\nAttacker did NOT regenerate the Ed25519 "
+    "signature."
+)
+
+
+
+
+print("\n[6] VERIFYING FORGED PACKET")
+
+forged_result = verify_secure_packet(
+    forged_packet,
+    alice_public_key
+)
+
+print("\nEd25519 Verification:")
 print(
     "VALID"
-    if integrity_valid
-    else "INTEGRITY CHECK FAILED"
+    if forged_result["classical_signature_valid"]
+    else "INVALID"
+)
+
+print("\nQuantum Verification:")
+
+if "decision" in forged_result["qds_result"]:
+    print(
+        forged_result["qds_result"]["decision"]
+    )
+else:
+    print("NOT VERIFIED")
+
+print("\nFinal Decision:")
+print(
+    forged_result["final_decision"]
 )
 
 
-# ----------------------------------------
-# 5. FINAL FORGERY DECISION
-# ----------------------------------------
 
-if forged_result["decision"] != "VALID":
-    final_decision = "FORGERY ATTACK DETECTED"
 
-elif not integrity_valid:
-    final_decision = "FORGERY ATTACK DETECTED"
 
-elif forged_message != message:
-    final_decision = "FORGERY ATTACK DETECTED"
+ed25519_failed = not (
+    forged_result["classical_signature_valid"]
+)
+
+final_packet_rejected = (
+    forged_result["final_decision"]
+    == "INVALID / SUSPICIOUS"
+)
+
+
+
+
+if (
+    ed25519_failed
+    and final_packet_rejected
+):
+
+    final_decision = (
+        "FORGERY ATTACK DETECTED"
+    )
 
 else:
-    final_decision = "FORGERY ATTACK NOT DETECTED"
+
+    final_decision = (
+        "FORGERY ATTACK NOT DETECTED"
+    )
+
+
 
 
 print("\n========================================")
 print("             ATTACK RESULT")
 print("========================================")
 
+print("\nAttack Type:")
+print("Message Forgery")
+
+print("\nOriginal Message:")
+print(MESSAGE)
+
+print("\nForged Message:")
+print(FORGED_MESSAGE)
+
+print("\nEd25519 Protection:")
+print(
+    "PASSED - Tampering was detected"
+    if ed25519_failed
+    else "FAILED - Tampering was not detected"
+)
+
+print("\nFinal Result:")
 print(final_decision)
+
+print("\n========================================")

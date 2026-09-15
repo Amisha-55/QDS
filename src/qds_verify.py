@@ -1,6 +1,9 @@
 import hashlib
 
-from qds_signature import message_to_state
+from qds_signature import message_to_bits
+
+
+VALID_BASES = {"Z", "X", "Y"}
 
 
 def verify_signature(signature, message, threshold=0.95):
@@ -9,24 +12,32 @@ def verify_signature(signature, message, threshold=0.95):
 
     Verification checks:
 
-    1. Recalculate the SHA-256 hash from the trusted message.
-    2. Independently derive the expected Pauli eigenstate.
-    3. Check the received message hash.
-    4. Check the received quantum-state metadata.
-    5. Check the received measurement basis.
-    6. Evaluate Bob's projective measurement results.
+    1. Recalculate the SHA-256 fingerprint of the trusted message.
+    2. Compare it with the classical integrity fingerprint.
+    3. Convert the trusted message into bits independently.
+    4. Check that the quantum signature contains the expected
+       number of message bits.
+    5. Check every quantum signature element:
+         - message bit
+         - measurement basis
+         - expected measurement outcome
+         - measurement results
+    6. Calculate the overall quantum measurement accuracy.
     7. Apply the statistical verification threshold.
 
     The message supplied to this function is treated as the
-    trusted/original message and is NOT taken from the signature.
+    trusted/original message.
+
+    SHA-256 is used only as a classical integrity fingerprint.
+    It is NOT used to select the quantum state.
 
     This is a simulation/prototype model, not a production
     cryptographic QDS implementation.
     """
 
-    # -----------------------------------------------
-    # 0. Validate input
-    # -----------------------------------------------
+
+    if not isinstance(signature, dict):
+        raise TypeError("Signature must be a dictionary")
 
     if not isinstance(message, str):
         raise TypeError("Message must be a string")
@@ -39,15 +50,18 @@ def verify_signature(signature, message, threshold=0.95):
             "Threshold must be between 0 and 1"
         )
 
-    # -----------------------------------------------
-    # 1. Recalculate message hash
-    # -----------------------------------------------
+
 
     calculated_hash = hashlib.sha256(
-        message.encode()
+        message.encode("utf-8")
     ).hexdigest()
 
-    received_hash = signature.get(
+    classical_integrity = signature.get(
+        "classical_integrity",
+        {}
+    )
+
+    received_hash = classical_integrity.get(
         "message_hash",
         ""
     )
@@ -56,140 +70,236 @@ def verify_signature(signature, message, threshold=0.95):
         calculated_hash == received_hash
     )
 
-    # -----------------------------------------------
-    # 2. Independently derive expected state
-    # -----------------------------------------------
+   
 
-    expected_state = message_to_state(message)
+    message_bits = message_to_bits(message)
 
-    received_state = signature.get(
-        "quantum_state",
-        "UNKNOWN"
-    )
-
-    state_valid = (
-        expected_state == received_state
-    )
-
-    # -----------------------------------------------
-    # 3. Check measurement basis
-    # -----------------------------------------------
-
-    expected_basis = expected_state
-
-    received_basis = signature.get(
-        "measurement_basis",
-        "UNKNOWN"
-    )
-
-    basis_valid = (
-        expected_basis == received_basis
-    )
-
-    # -----------------------------------------------
-    # 4. Obtain measurement results
-    # -----------------------------------------------
-
-    counts = signature.get(
-        "measurement_results",
+    quantum_signature = signature.get(
+        "quantum_signature",
         {}
     )
 
-    total_shots = sum(
-        counts.values()
+    elements = quantum_signature.get(
+        "elements",
+        []
     )
 
-    if total_shots == 0:
+    quantum_bit_count = signature.get(
+        "quantum_bit_count",
+        0
+    )
 
-        return {
-            "expected_state": expected_state,
-            "received_state": received_state,
-            "expected_basis": expected_basis,
-            "received_basis": received_basis,
-            "hash_valid": hash_valid,
-            "state_valid": state_valid,
-            "basis_valid": basis_valid,
-            "total_shots": 0,
-            "correct_shots": 0,
-            "verification_accuracy": 0.0,
-            "threshold": threshold,
-            "decision": "INVALID / SUSPICIOUS"
-        }
+    
 
-    # -----------------------------------------------
-    # 5. Evaluate Bob's projective measurement
-    #
-    # All three states are +1 eigenstates.
-    #
-    # After measurement in the matching basis:
-    #
-    # Z -> expected bit 0
-    # X -> expected bit 0
-    # Y -> expected bit 0
-    #
-    # Qiskit displays classical bits as:
-    #
-    #     c2 c1 c0
-    #
-    # Bob's measurement is c2 = leftmost bit.
-    # -----------------------------------------------
+    bit_count_valid = (
+        isinstance(quantum_bit_count, int)
+        and quantum_bit_count > 0
+        and quantum_bit_count <= len(message_bits)
+        and quantum_bit_count == len(elements)
+    )
 
-    expected_bit = 0
+    expected_bits = message_bits[:quantum_bit_count]
+
+   
+
+    elements_valid = True
+
+    total_shots = 0
     correct_shots = 0
 
-    for outcome, count in counts.items():
+    element_results = []
 
-        if not outcome:
-            continue
+    if not bit_count_valid:
 
-        bob_bit = int(
-            outcome[0]
+        elements_valid = False
+
+    else:
+
+        for index, element in enumerate(elements):
+
+            if not isinstance(element, dict):
+                elements_valid = False
+
+                element_results.append({
+                    "index": index,
+                    "valid": False,
+                    "reason": "Invalid quantum element"
+                })
+
+                continue
+
+           
+
+            expected_bit = expected_bits[index]
+
+          
+
+            received_bit = element.get(
+                "bit",
+                None
+            )
+
+            basis = element.get(
+                "basis",
+                "UNKNOWN"
+            )
+
+            expected_outcome = element.get(
+                "expected_outcome",
+                None
+            )
+
+            counts = element.get(
+                "measurement_results",
+                {}
+            )
+
+            
+
+            bit_valid = (
+                received_bit == expected_bit
+            )
+
+            
+
+            basis_valid = (
+                basis in VALID_BASES
+            )
+
+           
+
+            outcome_valid = (
+                str(expected_outcome) == str(expected_bit)
+            )
+
+           
+
+            element_total_shots = sum(
+                counts.values()
+            ) if isinstance(counts, dict) else 0
+
+            element_correct_shots = 0
+
+            if (
+                isinstance(counts, dict)
+                and element_total_shots > 0
+            ):
+
+                for outcome, count in counts.items():
+
+                    if not outcome:
+                        continue
+
+                    try:
+                        bob_bit = int(outcome[0])
+                    except (ValueError, TypeError):
+                        continue
+
+                    if bob_bit == expected_bit:
+                        element_correct_shots += count
+
+            
+
+            if element_total_shots > 0:
+
+                element_accuracy = (
+                    element_correct_shots
+                    / element_total_shots
+                )
+
+            else:
+
+                element_accuracy = 0.0
+
+            
+
+            element_valid = (
+                bit_valid
+                and basis_valid
+                and outcome_valid
+                and element_total_shots > 0
+                and element_accuracy >= threshold
+            )
+
+            if not element_valid:
+                elements_valid = False
+
+            total_shots += element_total_shots
+            correct_shots += element_correct_shots
+
+            element_results.append({
+                "index": index,
+                "expected_bit": expected_bit,
+                "received_bit": received_bit,
+                "basis": basis,
+                "expected_outcome": expected_outcome,
+                "bit_valid": bit_valid,
+                "basis_valid": basis_valid,
+                "outcome_valid": outcome_valid,
+                "total_shots": element_total_shots,
+                "correct_shots": element_correct_shots,
+                "accuracy": element_accuracy,
+                "valid": element_valid
+            })
+
+    
+
+    if total_shots > 0:
+
+        verification_accuracy = (
+            correct_shots / total_shots
         )
 
-        if bob_bit == expected_bit:
-            correct_shots += count
+    else:
 
-    # -----------------------------------------------
-    # 6. Calculate verification accuracy
-    # -----------------------------------------------
+        verification_accuracy = 0.0
 
-    verification_accuracy = (
-        correct_shots / total_shots
-    )
-
-    # -----------------------------------------------
-    # 7. Final verification decision
-    # -----------------------------------------------
+    
 
     if (
         hash_valid
-        and state_valid
-        and basis_valid
+        and bit_count_valid
+        and elements_valid
         and verification_accuracy >= threshold
     ):
         decision = "VALID"
+
     else:
         decision = "INVALID / SUSPICIOUS"
 
+   
+
     return {
-        "expected_state": expected_state,
-        "received_state": received_state,
-        "expected_basis": expected_basis,
-        "received_basis": received_basis,
-        "hash_valid": hash_valid,
-        "state_valid": state_valid,
-        "basis_valid": basis_valid,
+        "message_hash_valid": hash_valid,
+
+        "calculated_message_hash": calculated_hash,
+
+        "received_message_hash": received_hash,
+
+        "quantum_bit_count": quantum_bit_count,
+
+        "expected_message_bit_count": len(message_bits),
+
+        "bit_count_valid": bit_count_valid,
+
+        "quantum_elements_valid": elements_valid,
+
+        "element_results": element_results,
+
         "total_shots": total_shots,
+
         "correct_shots": correct_shots,
+
         "verification_accuracy": verification_accuracy,
+
         "threshold": threshold,
+
         "decision": decision
     }
 
 
-# --------------------------------------------------
-# TEST LEGITIMATE SIGNATURE
-# --------------------------------------------------
+
+
 
 if __name__ == "__main__":
 
@@ -209,9 +319,11 @@ if __name__ == "__main__":
     print(
         "========================================"
     )
+
     print(
         "       QDS SIGNATURE VERIFICATION"
     )
+
     print(
         "========================================"
     )
@@ -219,32 +331,35 @@ if __name__ == "__main__":
     print("\nMessage:")
     print(message)
 
-    print("\nExpected Quantum State:")
-    print(result["expected_state"])
+    print("\nSHA-256 Fingerprint Valid:")
+    print(
+        result["message_hash_valid"]
+    )
 
-    print("\nReceived Quantum State:")
-    print(result["received_state"])
+    print("\nQuantum Bit Count:")
+    print(
+        result["quantum_bit_count"]
+    )
 
-    print("\nExpected Measurement Basis:")
-    print(result["expected_basis"])
+    print("\nExpected Message Bit Count:")
+    print(
+        result["expected_message_bit_count"]
+    )
 
-    print("\nReceived Measurement Basis:")
-    print(result["received_basis"])
-
-    print("\nHash Valid:")
-    print(result["hash_valid"])
-
-    print("\nState Valid:")
-    print(result["state_valid"])
-
-    print("\nBasis Valid:")
-    print(result["basis_valid"])
+    print("\nQuantum Elements Valid:")
+    print(
+        result["quantum_elements_valid"]
+    )
 
     print("\nTotal Measurement Shots:")
-    print(result["total_shots"])
+    print(
+        result["total_shots"]
+    )
 
     print("\nCorrect Measurements:")
-    print(result["correct_shots"])
+    print(
+        result["correct_shots"]
+    )
 
     print("\nVerification Accuracy:")
     print(
@@ -257,9 +372,10 @@ if __name__ == "__main__":
     )
 
     print("\nVerification Decision:")
-    print(result["decision"])
+    print(
+        result["decision"]
+    )
 
     print(
         "\n========================================"
     )
-

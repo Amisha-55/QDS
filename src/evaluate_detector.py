@@ -58,7 +58,6 @@ if __name__ == "__main__":
 
     results = {}
 
-    # Security metric counters
     true_negative = 0
     false_positive = 0
     true_positive = 0
@@ -88,16 +87,13 @@ if __name__ == "__main__":
         total_correct += correct
         total_experiments += EXPERIMENTS
 
-        # Calculate security metrics
         if attack is None:
 
-            # Legitimate signature
             true_negative += correct
             false_positive += incorrect
 
         else:
 
-            # Attack
             true_positive += correct
             false_negative += incorrect
 
@@ -112,7 +108,6 @@ if __name__ == "__main__":
 
     overall_accuracy = total_correct / total_experiments
 
-    # Security metrics
     total_attacks = true_positive + false_negative
     total_legitimate = true_negative + false_positive
 

@@ -2,17 +2,9 @@ from noisy_channel import run_noisy_experiment
 from config import SHOTS, STATES, BASES
 
 
-# ============================================
-# SETTINGS
-# ============================================
-
 NOISE_PROBABILITY = 0.02
 REPEATS = 50
 
-
-# ============================================
-# EXPECTED BEHAVIOR
-# ============================================
 
 def expected_probability_one(state, basis):
     if state == basis:
@@ -20,10 +12,6 @@ def expected_probability_one(state, basis):
 
     return 0.5
 
-
-# ============================================
-# CALCULATE ONE EXPERIMENT SCORE
-# ============================================
 
 def calculate_score(
     shots=SHOTS,
@@ -62,10 +50,6 @@ def calculate_score(
     return total_deviation / experiment_count
 
 
-# ============================================
-# CALIBRATION
-# ============================================
-
 if __name__ == "__main__":
 
     print("========================================")
@@ -101,10 +85,8 @@ if __name__ == "__main__":
     minimum = min(scores)
     maximum = max(scores)
 
-    # Conservative statistical threshold
     threshold = mean_score + 3 * std_score
 
-    # Ensure every calibration run is accepted
     threshold = max(
         threshold,
         maximum

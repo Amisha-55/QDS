@@ -64,8 +64,6 @@ if __name__ == "__main__":
 
     threshold = mean_error + (3 * std_error)
 
-    # Make sure the threshold is above every
-    # legitimate calibration observation.
     threshold = max(threshold, max_error)
 
     print("\n========================================")

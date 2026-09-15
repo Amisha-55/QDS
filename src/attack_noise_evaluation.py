@@ -7,9 +7,6 @@ SHOTS = 1000
 REPEATS = 20
 NOISE_LEVEL = 0.02
 
-# Preliminary threshold based on previous legitimate calibration:
-# Mean = 0.0113, Std = 0.0025
-# Mean + 3*Std = 0.0188
 THRESHOLD = 0.0188
 
 STATES = ["Z", "X", "Y"]
@@ -58,25 +55,19 @@ def measure_in_basis(qc, basis):
 def run_experiment(state, basis, attack):
     qc = QuantumCircuit(1, 1)
 
-    # Prepare quantum state
     prepare_state(qc, state)
 
-    # Apply simulated attack
     apply_attack(qc, attack)
 
-    # Channel placeholder
     qc.id(0)
 
-    # Measurement
     measure_in_basis(qc, basis)
 
-    # 2% depolarizing channel noise
     noise = depolarizing_error(NOISE_LEVEL, 1)
 
     simulator = AerSimulator()
     simulator.set_options()
 
-    # Add noise specifically to the channel placeholder
     noisy_simulator = AerSimulator(
         noise_model=build_noise_model(noise)
     )
@@ -118,7 +109,6 @@ def calculate_score(attack):
                 attack
             )
 
-            # Expected legitimate behaviour
             if state == basis:
                 expected_p1 = 0.0
             else:

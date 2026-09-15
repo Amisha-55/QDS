@@ -12,15 +12,12 @@ def prepare_state(qc, state):
     """
 
     if state == "Z":
-        # |0>
         pass
 
     elif state == "X":
-        # |+> = H|0>
         qc.h(0)
 
     elif state == "Y":
-        # |+i> = S H|0>
         qc.h(0)
         qc.s(0)
 
@@ -88,56 +85,25 @@ def teleport_state(state, shots=1000):
 
     qc = QuantumCircuit(3, 3)
 
-    # ------------------------------------------------
-    # 1. Prepare state to be teleported
-    # ------------------------------------------------
-
     prepare_state(qc, state)
 
-    # ------------------------------------------------
-    # 2. Create Bell pair
-    # ------------------------------------------------
-
     create_bell_pair(qc)
-
-    # ------------------------------------------------
-    # 3. Alice's Bell measurement operations
-    # ------------------------------------------------
 
     qc.cx(0, 1)
     qc.h(0)
 
-    # ------------------------------------------------
-    # 4. Measure Alice's qubits
-    # ------------------------------------------------
-
     qc.measure(0, 0)
     qc.measure(1, 1)
 
-    # ------------------------------------------------
-    # 5. Bob's conditional Pauli corrections
-    # ------------------------------------------------
-
-    # X correction controlled by c1
     with qc.if_test((qc.clbits[1], 1)):
         qc.x(2)
 
-    # Z correction controlled by c0
     with qc.if_test((qc.clbits[0], 1)):
         qc.z(2)
-
-    # ------------------------------------------------
-    # 6. Measure Bob in the same basis as the
-    #    original state
-    # ------------------------------------------------
 
     apply_measurement_basis(qc, state)
 
     qc.measure(2, 2)
-
-    # ------------------------------------------------
-    # 7. Run simulation
-    # ------------------------------------------------
 
     simulator = AerSimulator()
 
