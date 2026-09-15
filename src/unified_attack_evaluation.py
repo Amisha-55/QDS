@@ -131,7 +131,7 @@ original_bit = first_element["bit"]
 first_element["bit"] = 1 - original_bit
 
 first_element["expected_outcome"] = (
-    1 - first_element["expected_outcome"]
+    1 - int(first_element["expected_outcome"])
 )
 
 

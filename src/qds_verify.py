@@ -84,7 +84,7 @@ def verify_signature(signature, message, threshold=0.95):
         []
     )
 
-    quantum_bit_count = quantum_signature.get(
+    quantum_bit_count = signature.get(
         "quantum_bit_count",
         0
     )
@@ -169,7 +169,7 @@ def verify_signature(signature, message, threshold=0.95):
            
 
             outcome_valid = (
-                expected_outcome == expected_bit
+                str(expected_outcome) == str(expected_bit)
             )
 
            
