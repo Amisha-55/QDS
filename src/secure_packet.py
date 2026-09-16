@@ -26,8 +26,18 @@ def canonical_json(data):
 def create_secure_packet(
     message,
     private_key,
-    signer_id
+    signer_id,
+    max_bits=None  # Step 1: Remove the hardcoded 8
 ):
+    
+    # ... (keep your existing error checks here) ...
+
+    # Step 2: Dynamically calculate the exact number of bits required
+    # 1 character = 1 byte = 8 bits
+    if max_bits is None:
+        max_bits = len(message) * 8 
+
+  
     """
     Create a secure packet containing:
 
@@ -59,7 +69,8 @@ def create_secure_packet(
     
 
     qds_signature = generate_signature(
-        message
+        message,
+        max_bits=max_bits
     )
 
     
@@ -101,7 +112,8 @@ def create_secure_packet(
 
 def verify_secure_packet(
     packet,
-    public_key
+    public_key,
+    threshold=0.95
 ):
     """
     Verify a complete secure packet.
@@ -211,7 +223,8 @@ def verify_secure_packet(
 
         qds_result = verify_signature(
             payload["qds_signature"],
-            payload["message"]
+            payload["message"],
+            threshold=threshold
         )
 
     else:
