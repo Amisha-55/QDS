@@ -2,6 +2,13 @@ SHOTS = 1000
 
 NOISE_PROBABILITY = 0.02
 
+# Default error rate threshold for threat detector (error_rate <= THRESHOLD is legitimate)
+THRESHOLD = 0.05
+
+# Verification accuracy threshold (1 - THRESHOLD)
+VERIFICATION_ACCURACY_THRESHOLD = 0.95
+
+
 STATES = ["Z", "X", "Y"]
 
 BASES = ["Z", "X", "Y"]

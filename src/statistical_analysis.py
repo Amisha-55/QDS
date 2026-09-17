@@ -86,44 +86,75 @@ def calculate_statistics(counts, shots):
     return probability_0, probability_1, error_rate
 
 
-print("========================================")
-print("     STATISTICAL CHANNEL ANALYSIS")
-print("========================================")
+def advanced_statistical_evaluation(counts, shots, p_noise=0.02):
+    """
+    Computes rigorous statistical metrics for threat detection:
+    - Error rate and zero probability
+    - 99% Hoeffding confidence interval
+    - Log-Likelihood Ratio against eavesdropping hypothesis
+    """
+    p0, p1, error_rate = calculate_statistics(counts, shots)
+    from math_model import QDSMathematicalModel
+    
+    ci_lower, ci_upper, margin = QDSMathematicalModel.calculate_confidence_interval(
+        observed_error=error_rate, shots=shots, confidence_level=0.99
+    )
+    
+    lrt_result = QDSMathematicalModel.likelihood_ratio_test(
+        zero_count=counts.get("0", 0),
+        one_count=counts.get("1", 0),
+        shots=shots,
+        p_legitimate=p_noise,
+        p_attack=0.50
+    )
+    
+    return {
+        "probability_0": p0,
+        "probability_1": p1,
+        "error_rate": error_rate,
+        "confidence_lower": ci_lower,
+        "confidence_upper": ci_upper,
+        "margin": margin,
+        "llr": lrt_result["llr"],
+        "hypothesis_decision": lrt_result["decision"],
+        "p_value": lrt_result["p_value"]
+    }
 
-states = ["Z", "X", "Y"]
-attacks = [
-    None,
-    "bit_flip",
-    "phase_flip",
-    "bit_phase_flip"
-]
 
-shots = 1000
+if __name__ == "__main__":
+    print("========================================")
+    print("     STATISTICAL CHANNEL ANALYSIS")
+    print("========================================")
 
+    states = ["Z", "X", "Y"]
+    attacks = [
+        None,
+        "bit_flip",
+        "phase_flip",
+        "bit_phase_flip"
+    ]
+    shots = 1000
 
-for state in states:
+    for state in states:
+        print(f"\n{'=' * 40}")
+        print(f"STATE: {state}-EIGENSTATE")
+        print(f"{'=' * 40}")
 
-    print(f"\n{'=' * 40}")
-    print(f"STATE: {state}-EIGENSTATE")
-    print(f"{'=' * 40}")
+        for attack in attacks:
+            name = "LEGITIMATE" if attack is None else attack.upper()
 
-    for attack in attacks:
+            counts = run_experiment(
+                state=state,
+                attack=attack,
+                shots=shots
+            )
 
-        name = "LEGITIMATE" if attack is None else attack.upper()
+            stats = advanced_statistical_evaluation(counts, shots)
 
-        counts = run_experiment(
-            state=state,
-            attack=attack,
-            shots=shots
-        )
-
-        p0, p1, error_rate = calculate_statistics(
-            counts,
-            shots
-        )
-
-        print(f"\n{name}")
-        print("Measurement:", counts)
-        print(f"P(0): {p0:.3f}")
-        print(f"P(1): {p1:.3f}")
-        print(f"Error Rate: {error_rate:.3f}")
+            print(f"\n{name}")
+            print("Measurement:", counts)
+            print(f"P(0): {stats['probability_0']:.3f}")
+            print(f"P(1): {stats['probability_1']:.3f}")
+            print(f"Error Rate: {stats['error_rate']:.3f}")
+            print(f"99% CI: [{stats['confidence_lower']:.3f}, {stats['confidence_upper']:.3f}] (Margin: {stats['margin']:.3f})")
+            print(f"LLR: {stats['llr']:.2f} -> Decision: {stats['hypothesis_decision']}")
