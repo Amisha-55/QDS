@@ -11,15 +11,21 @@ Strictly non-AI: evaluative decisions rely on quantum measurement statistics,
 projective Pauli verification, and statistical thresholds.
 """
 
+import os
 import time
 import uuid
 import base64
 from copy import deepcopy
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
-from classical_signature import generate_key_pair, sign_data
+from classical_signature import (
+    generate_key_pair,
+    sign_data,
+    save_private_key,
+    load_private_key,
+)
 from secure_packet import create_secure_packet, verify_secure_packet, canonical_json
-from trusted_keys import register_public_key, get_public_key
+from trusted_keys import register_public_key, get_public_key, REGISTRY_FILE
 from noisy_channel import run_noisy_experiment
 from threat_detector import comprehensive_threat_classification, detect_threat
 from math_model import QDSMathematicalModel
@@ -31,6 +37,7 @@ class QDSAttackSuite:
     Unified manager for executing and evaluating adversarial scenarios
     against the teleportation-based QDS architecture.
     """
+    _KEY_CACHE: Dict[str, Tuple[Any, Any]] = {}
 
     def __init__(self, signer_id: str = "Alice", shots: int = SHOTS, threshold: float = THRESHOLD):
         self.signer_id = signer_id
@@ -38,9 +45,23 @@ class QDSAttackSuite:
         self.threshold = threshold
         self.used_signature_ids = set()
 
-        # Initialize trusted keys
-        self.priv_key, self.pub_key = generate_key_pair()
-        register_public_key(self.signer_id, self.pub_key)
+        # Initialize trusted keys: reuse existing persistent key or generate once
+        if self.signer_id in QDSAttackSuite._KEY_CACHE:
+            self.priv_key, self.pub_key = QDSAttackSuite._KEY_CACHE[self.signer_id]
+        else:
+            keys_dir = os.path.dirname(REGISTRY_FILE)
+            os.makedirs(keys_dir, exist_ok=True)
+            priv_file = os.path.join(keys_dir, f"{self.signer_id}_private.pem")
+
+            if os.path.exists(priv_file):
+                self.priv_key = load_private_key(priv_file)
+                self.pub_key = self.priv_key.public_key()
+            else:
+                self.priv_key, self.pub_key = generate_key_pair()
+                save_private_key(self.priv_key, priv_file)
+
+            register_public_key(self.signer_id, self.pub_key)
+            QDSAttackSuite._KEY_CACHE[self.signer_id] = (self.priv_key, self.pub_key)
 
     def reset_replay_cache(self):
         """Clears seen signature identifiers."""

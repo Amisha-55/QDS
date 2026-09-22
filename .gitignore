@@ -3,25 +3,10 @@
 venv/
 env/
 
-# Python cache
+# Python cache & bytecode
 __pycache__/
 *.py[cod]
 *.pyo
-
-# Environment variables / secrets
-.env
-.env.*
-!.env.example
-
-# IDE / editor files
-.vscode/
-.idea/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Test / coverage / build files
 .pytest_cache/
 .coverage
 htmlcov/
@@ -29,10 +14,43 @@ dist/
 build/
 *.egg-info/
 
-# Generated project data
-results/
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
 
-# Logs
+# Cryptographic private keys & generated credentials
+keys/*.pem
+*.pem
+*.key
+keys/public_keys.json
+
+# Flutter / Dart / Android build artifacts
+**/.dart_tool/
+**/build/
+**/.pub/
+**/.pub-cache/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/android/.gradle/
+**/android/local.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+*.iml
+
+# IDE & editor files
+.vscode/
+.idea/
+*.ipr
+*.iws
+
+# OS files & temp files
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
 *.log
 
-keys/public_keys.json
+# Generated project data & results
+results/

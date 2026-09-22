@@ -1,3 +1,9 @@
 qiskit
 qiskit-aer
 cryptography
+numpy
+fastapi
+uvicorn[standard]
+websockets
+pytest
+httpx
