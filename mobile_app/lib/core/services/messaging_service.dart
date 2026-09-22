@@ -160,8 +160,7 @@ class MessagingService {
 
     final senderId = data['sender_id'] as String? ?? 'X';
     final content = data['message'] as String? ?? '';
-    final rawTimestamp = data['timestamp'] as String?;
-    final timestamp = rawTimestamp != null ? DateTime.tryParse(rawTimestamp) ?? DateTime.now() : DateTime.now();
+    final receiveTimestamp = DateTime.now();
     final securityData = data['security'] as Map<String, dynamic>?;
 
     final senderRole = senderId == 'X' ? UserRole.sender : UserRole.receiver;
@@ -176,7 +175,7 @@ class MessagingService {
       senderRole: senderRole,
       senderName: senderName,
       content: content,
-      timestamp: timestamp,
+      timestamp: receiveTimestamp,
       status: MessageDeliveryStatus.delivered,
       securityStatus: securityStatus,
       securityData: securityData,
@@ -189,7 +188,7 @@ class MessagingService {
     );
 
     _messagesByConversation.putIfAbsent(conversationId, () => []).add(incomingMessage);
-    _updateConversationSnippet(conversationId, content, timestamp);
+    _updateConversationSnippet(conversationId, content, receiveTimestamp);
 
     _messageReceivedController.add(incomingMessage);
   }

@@ -3,8 +3,8 @@ abstract final class ApiConstants {
   /// Default gateway host.
   /// - Desktop (Windows/macOS/Linux): '127.0.0.1'
   /// - Android Emulator: '10.0.2.2'
-  /// - Physical Android device: Set to computer's LAN IP (e.g., '<LAPTOP_IP>')
-  ///   via `--dart-define=QDS_GATEWAY_HOST=<LAPTOP_IP>` or runtime [customHost].
+ /// - Physical Android device: Set to computer's LAN IP (e.g., `LAPTOP_IP`)
+///   via `--dart-define=QDS_GATEWAY_HOST=LAPTOP_IP` or runtime [customHost].
   static const String defaultHost = String.fromEnvironment(
     'QDS_GATEWAY_HOST',
     defaultValue: '127.0.0.1',

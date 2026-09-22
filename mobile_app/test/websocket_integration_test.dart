@@ -353,6 +353,54 @@ void main() {
       await service.dispose();
     });
 
+    test('Incoming message with old backend timestamp gets current local receive timestamp', () async {
+      final fakeSocket = FakeWebSocket();
+      final client = WebSocketClient(
+        connector: (url) async => fakeSocket,
+        autoReconnect: false,
+      );
+      final service = MessagingService(client: client);
+      await service.connect();
+
+      final receivedMessages = <MessageModel>[];
+      final sub = service.onMessageReceived.listen(receivedMessages.add);
+
+      final beforeReceive = DateTime.now().subtract(const Duration(seconds: 1));
+      const oldPacketTimestamp = '2026-09-17T21:00:00Z';
+
+      fakeSocket.feedIncoming({
+        'type': 'message_result',
+        'message_id': 'msg_old_timestamp_test',
+        'sender_id': 'X',
+        'receiver_id': 'Y',
+        'message': 'Packet with old timestamp',
+        'timestamp': oldPacketTimestamp,
+        'security': {
+          'final_decision': 'TRUSTED',
+          'likely_attack_type': 'NONE',
+          'classical_signature_valid': true,
+          'qds_valid': true,
+          'replay_detected': false,
+        },
+      });
+
+      await Future.delayed(const Duration(milliseconds: 20));
+
+      expect(receivedMessages, hasLength(1));
+      final msg = receivedMessages.first;
+      final afterReceive = DateTime.now().add(const Duration(seconds: 1));
+
+      expect(msg.timestamp.isAfter(beforeReceive), isTrue);
+      expect(msg.timestamp.isBefore(afterReceive), isTrue);
+      expect(msg.timestamp.toIso8601String(), isNot(equals(oldPacketTimestamp)));
+
+      expect(msg.finalDecision, equals('TRUSTED'));
+      expect(msg.classicalSignatureValid, isTrue);
+
+      await sub.cancel();
+      await service.dispose();
+    });
+
     test('Detects replay attack in security payload and marks threatDetected', () async {
       final fakeSocket = FakeWebSocket();
       final client = WebSocketClient(
