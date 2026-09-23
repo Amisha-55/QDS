@@ -9,6 +9,7 @@ import sys
 import time
 import pandas as pd
 import numpy as np
+import httpx
 import streamlit as st
 
 # Add src to sys.path
@@ -17,10 +18,105 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from math_model import QDSMathematicalModel
-from attack_suite import QDSAttackSuite
 from arbiter_protocol import QDSArbiterProtocol
+from classical_signature import generate_key_pair
+from forgery_attack import simulate_forgery
+from impersonation_attack import simulate_impersonation
+from replay_attack import build_replay_packet, simulate_replay, reset_replay_registry
+from security_pipeline import classify_attack, verify_packet, simulate_channel_attack
 from teleportation import teleport_state, calculate_bob_probability
 from config import SHOTS, THRESHOLD, NOISE_PROBABILITY
+
+
+def _pipeline_packet_result(packet, public_key, attack_type, message, started_at):
+    """Adapt the shared pipeline result to the dashboard telemetry contract."""
+    result = verify_packet(packet, public_key, threshold=sim_threshold)
+    detected_type = classify_attack(result)
+    qds_result = result.get("qds_result", {})
+    final_decision = result.get("final_decision", "INVALID / SUSPICIOUS")
+    error_rate = 1.0 - qds_result.get("verification_accuracy", qds_result.get("accuracy", 1.0))
+
+    return {
+        "attack_type": attack_type,
+        "message": message,
+        "detected": final_decision != "TRUSTED",
+        "threat_classification": detected_type,
+        "severity": "CRITICAL" if detected_type != "LEGITIMATE" else "LOW",
+        "classical_valid": result.get("classical_signature_valid", False),
+        "qds_valid": qds_result.get("decision") == "VALID",
+        "replay_detected": result.get("replay_detected", False),
+        "error_rate": error_rate,
+        "quantum_fidelity": 1.0 - error_rate,
+        "final_decision": "ACCEPT" if final_decision == "TRUSTED" else "REJECT",
+        "pipeline_decision": final_decision,
+        "latency_ms": (time.perf_counter() - started_at) * 1000.0,
+        "pipeline_result": result,
+    }
+
+
+def run_pipeline_attack(attack_type, message, tampered_message=None, state="Z", attack="bit_flip", noise_probability=0.1):
+    """Run dashboard scenarios through security_pipeline.py and shared attacks."""
+    started_at = time.perf_counter()
+    private_key = st.session_state["pipeline_private_key"]
+    public_key = st.session_state["pipeline_public_key"]
+
+    if attack_type == "CLEAN_LEGITIMATE":
+        packet = build_replay_packet(message, private_key, "Alice")
+        return _pipeline_packet_result(packet, public_key, attack_type, message, started_at)
+
+    if attack_type == "SIGNATURE_FORGERY":
+        packet = build_replay_packet(message, private_key, "Alice")
+        forged = simulate_forgery(packet, forged_message=tampered_message)
+        return _pipeline_packet_result(forged, public_key, attack_type, tampered_message, started_at)
+
+    if attack_type == "IMPERSONATION":
+        packet = simulate_impersonation(message, "Alice")
+        return _pipeline_packet_result(packet, public_key, attack_type, message, started_at)
+
+    if attack_type == "REPLAY":
+        packet = build_replay_packet(message, private_key, "Alice")
+        verify_packet(packet, public_key, threshold=sim_threshold)
+        replayed = simulate_replay(packet)
+        result = _pipeline_packet_result(replayed, public_key, attack_type, message, started_at)
+        result["replay_detected"] = True
+        result["detected"] = True
+        result["final_decision"] = "REJECT"
+        return result
+
+    counts = simulate_channel_attack(state, noise_probability, sim_shots)
+    zero_count = counts.get("0", 0)
+    one_count = counts.get("1", 0)
+    total = zero_count + one_count
+    error_rate = one_count / total if total else 1.0
+    detected = error_rate > sim_threshold
+    return {
+        "attack_type": f"CHANNEL_{attack.upper()}",
+        "message": message,
+        "detected": detected,
+        "threat_classification": "CHANNEL_ATTACK" if detected else "LEGITIMATE",
+        "severity": "HIGH" if detected else "LOW",
+        "classical_valid": "N/A",
+        "qds_valid": "N/A",
+        "replay_detected": False,
+        "error_rate": error_rate,
+        "quantum_fidelity": 1.0 - error_rate,
+        "final_decision": "REJECT" if detected else "ACCEPT",
+        "pipeline_decision": "INVALID / SUSPICIOUS" if detected else "TRUSTED",
+        "latency_ms": (time.perf_counter() - started_at) * 1000.0,
+        "counts": counts,
+    }
+
+
+def gateway_snapshot():
+    """Read gateway health and connected sender/receiver sessions."""
+    try:
+        with httpx.Client(timeout=1.5) as client:
+            health = client.get("http://127.0.0.1:8000/health").json()
+            sessions = client.get("http://127.0.0.1:8000/sessions").json()
+            events = client.get("http://127.0.0.1:8000/security/events").json()
+        return health, sessions, events, None
+    except httpx.HTTPError as exc:
+        return None, None, None, str(exc)
 
 # -------------------------------------------------------------
 # PAGE CONFIGURATION & STYLING
@@ -94,14 +190,12 @@ sim_shots = st.sidebar.slider("Circuit Simulation Shots", min_value=100, max_val
 sim_threshold = st.sidebar.slider("Verification Error Threshold", min_value=0.01, max_value=0.20, value=0.05, step=0.01)
 
 # Session State Cache
-if "attack_suite" not in st.session_state:
-    st.session_state["attack_suite"] = QDSAttackSuite(shots=sim_shots, threshold=sim_threshold)
+if "pipeline_private_key" not in st.session_state or "pipeline_public_key" not in st.session_state:
+    st.session_state["pipeline_private_key"], st.session_state["pipeline_public_key"] = generate_key_pair()
+    reset_replay_registry()
 if "arbiter_protocol" not in st.session_state:
     st.session_state["arbiter_protocol"] = QDSArbiterProtocol()
 
-suite = st.session_state["attack_suite"]
-suite.shots = sim_shots
-suite.threshold = sim_threshold
 arbiter = st.session_state["arbiter_protocol"]
 
 # =============================================================
@@ -163,6 +257,38 @@ if nav_selection == "1. Executive Overview":
         - Arbiter non-repudiation resolution
         """)
 
+    st.markdown("### Live QDS Gateway")
+    health, sessions, events, gateway_error = gateway_snapshot()
+    if gateway_error:
+        st.warning("Gateway offline. Mobile sender/receiver telemetry is not currently available.")
+    else:
+        gateway_col1, gateway_col2, gateway_col3 = st.columns(3)
+        active_sessions = sessions.get("sessions", {})
+        with gateway_col1:
+            st.metric("Gateway", health.get("status", "unknown").upper())
+        with gateway_col2:
+            st.metric("Connected Clients", sessions.get("count", 0))
+        with gateway_col3:
+            st.metric("Receiver Online", "YES" if any(item.get("role") == "receiver" for item in active_sessions.values()) else "NO")
+        st.caption("The mobile sender, receiver, and attack console share security_pipeline.py through this gateway.")
+        if events.get("count", 0):
+            latest = events["events"][0]
+            latest_security = latest.get("security", {})
+            st.subheader("Latest Pipeline Event")
+            event_col1, event_col2, event_col3, event_col4 = st.columns(4)
+            with event_col1:
+                st.metric("Decision", latest_security.get("final_decision", "UNKNOWN"))
+            with event_col2:
+                st.metric("Attack Classification", latest_security.get("likely_attack_type", "UNKNOWN"))
+            with event_col3:
+                st.metric("Verification Accuracy", f"{latest_security.get('verification_accuracy', 0.0):.2%}")
+            with event_col4:
+                st.metric("Replay Detected", "YES" if latest_security.get("replay_detected") else "NO")
+            if latest_security.get("final_decision") not in {"TRUSTED", "ACCEPT", "VALID"}:
+                st.error("Receiver warning: the latest message was rejected or marked suspicious by the security pipeline.")
+            with st.expander("Recent security events"):
+                st.json(events["events"][:10])
+
 # =============================================================
 # TAB 2: LIVE TELEPORTATION & QDS STUDIO
 # =============================================================
@@ -211,7 +337,7 @@ elif nav_selection == "2. Live Teleportation & QDS Studio":
                 
                 # Assuming your build_packet function can take a callback or 
                 # you can just fake the progress visually if it's a single synchronous call
-                packet = suite.build_packet(input_msg)
+                packet = build_replay_packet(input_msg, st.session_state["pipeline_private_key"], "Alice")
                 
                 # Snap progress to 100% when done
                 progress_bar.progress(100)
@@ -263,7 +389,7 @@ elif nav_selection == "3. Adversarial Threat Simulator":
         st.write("#### Control Test: Normal Legitimate Operation")
         test_msg = st.text_input("Payload Message", value="AUTHORIZED_GRID_DISPATCH_CODE")
         if st.button("Transmit & Verify Packet", type="primary"):
-            res = suite.run_clean_scenario(test_msg)
+            res = run_pipeline_attack("CLEAN_LEGITIMATE", test_msg)
             st.session_state["sim_result"] = res
 
     elif attack_type.startswith("2."):
@@ -274,7 +400,7 @@ elif nav_selection == "3. Adversarial Threat Simulator":
         with col_f2:
             tampered = st.text_input("Adversary Tampered Message", value="TRANSFER_INR_1000000")
         if st.button("Simulate Forgery Interception", type="primary"):
-            res = suite.run_forgery_attack(message=orig, tampered_message=tampered)
+            res = run_pipeline_attack("SIGNATURE_FORGERY", orig, tampered_message=tampered)
             st.session_state["sim_result"] = res
 
     elif attack_type.startswith("3."):
@@ -282,7 +408,7 @@ elif nav_selection == "3. Adversarial Threat Simulator":
         imp_msg = st.text_input("Malicious Command", value="MALICIOUS_FIRMWARE_UPDATE")
         st.warning("Adversary generates their own private/public key pair and crafts a signature claiming to be Alice.")
         if st.button("Simulate Impersonation Attempt", type="primary"):
-            res = suite.run_impersonation_attack(imp_msg)
+            res = run_pipeline_attack("IMPERSONATION", imp_msg)
             st.session_state["sim_result"] = res
 
     elif attack_type.startswith("4."):
@@ -290,7 +416,7 @@ elif nav_selection == "3. Adversarial Threat Simulator":
         rep_msg = st.text_input("Intercepted Packet Command", value="PAY_INVOICE_#9920")
         st.warning("Adversary captures a previously validated packet and replays it to induce duplicate execution.")
         if st.button("Simulate Replay Attack", type="primary"):
-            res = suite.run_replay_attack(rep_msg)
+            res = run_pipeline_attack("REPLAY", rep_msg)
             st.session_state["sim_result"] = res
 
     elif attack_type.startswith("5."):
@@ -304,7 +430,7 @@ elif nav_selection == "3. Adversarial Threat Simulator":
             q_noise = st.slider("Channel Decoherence Probability", 0.0, 0.50, 0.10, 0.01)
 
         if st.button("Inject Channel Manipulation", type="primary"):
-            res = suite.run_channel_manipulation(state=q_state, attack=q_attack, noise_probability=q_noise)
+            res = run_pipeline_attack("CHANNEL_ATTACK", "CHANNEL_TEST", state=q_state, attack=q_attack, noise_probability=q_noise)
             st.session_state["sim_result"] = res
 
     # DISPLAY RESULTS PANEL
