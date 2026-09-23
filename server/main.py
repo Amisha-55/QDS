@@ -63,6 +63,14 @@ app.add_middleware(
 )
 
 manager = WebSocketManager()
+security_events = []
+MAX_SECURITY_EVENTS = 100
+
+
+def record_security_event(envelope: Dict[str, Any]) -> None:
+    """Keep a bounded in-memory feed for dashboard security telemetry."""
+    security_events.insert(0, envelope)
+    del security_events[MAX_SECURITY_EVENTS:]
 
 
 # ------------------------------------------------------------
@@ -93,6 +101,15 @@ async def list_sessions() -> Dict[str, Any]:
     return {
         "count": len(manager.get_active_sessions()),
         "sessions": manager.get_active_sessions(),
+    }
+
+
+@app.get("/security/events", tags=["Security"])
+async def list_security_events() -> Dict[str, Any]:
+    """Return recent pipeline results produced by mobile clients or attack tools."""
+    return {
+        "count": len(security_events),
+        "events": security_events,
     }
 
 
@@ -233,6 +250,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     )
                     continue
 
+                record_security_event(envelope)
+
                 # Route envelope to receiver Y if connected
                 receiver_delivered = await manager.send_json(receiver_id, envelope)
 
@@ -294,6 +313,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         )
                     )
                     continue
+
+                record_security_event(envelope)
 
                 # Route to receiver Y
                 receiver_delivered = await manager.send_json(receiver_id, envelope)
